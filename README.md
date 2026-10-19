@@ -6,8 +6,10 @@ An agent coding framework. Skills and workflows for working with AI coding agent
 
 ```
 discuss ──► /calibrate ──► plan ──► implement ──► /slice-commits ──► /open-pr ──► /merge-prs
-            ▲                        ▲
-            gate before building     coding-principles (loads automatically while coding)
+                 │                      │
+                 ▼                      ▼
+       gate before building     coding-principles
+                                loads automatically while coding
 ```
 
 ## Skills
