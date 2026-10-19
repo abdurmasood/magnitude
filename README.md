@@ -1,6 +1,6 @@
 # Magnitude
 
-A code writing framework for improving code quality by an order of magnitude. Usable with Claude Code, Cursor and Codex.
+A set of skills for improving a code writing flow (driven by agents) by an order of magnitude. Usable with Claude Code, Cursor and Codex.
 
 ## Workflow
 
