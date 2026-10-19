@@ -10,6 +10,7 @@ try {
     skillsDir: bundledSkillsDir(),
     interactive: process.stdin.isTTY === true,
     log: console.log,
+    error: console.error,
   });
 } catch (error) {
   console.error(error instanceof Error ? error.message : String(error));

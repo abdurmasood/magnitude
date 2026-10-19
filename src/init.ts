@@ -16,6 +16,8 @@ export interface InitOptions {
   skillsDir: string;
   interactive: boolean;
   log: (line: string) => void;
+  /** Usage errors, refusals and cancellation; cli.ts sends these to stderr. */
+  error: (line: string) => void;
 }
 
 const USAGE = [
@@ -50,11 +52,11 @@ export async function runInit(opts: InitOptions): Promise<number> {
     return await run(opts);
   } catch (error) {
     if (error instanceof UsageError) {
-      opts.log(error.message);
+      opts.error(error.message);
       return 2;
     }
     if (error instanceof Cancelled) {
-      opts.log("Cancelled. Nothing was written.");
+      opts.error("Cancelled. Nothing was written.");
       return 1;
     }
     throw error;
@@ -67,7 +69,7 @@ async function run(opts: InitOptions): Promise<number> {
   if (flags.command === "help") return printAll(opts.log, USAGE);
   if (flags.command === "version") return printAll(opts.log, [readVersion()]);
   if (!opts.interactive && !flags.yes) {
-    opts.log(NOT_A_TERMINAL);
+    opts.error(NOT_A_TERMINAL);
     return 1;
   }
   const roots: Roots = { project: findProjectRoot(opts.cwd), home: opts.home };

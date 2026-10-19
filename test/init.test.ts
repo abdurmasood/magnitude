@@ -11,6 +11,7 @@ const temp = (label: string) => mkdtempSync(join(tmpdir(), `magnitude-init-${lab
 let cwd: string;
 let home: string;
 let lines: string[];
+let errors: string[];
 let base: InitOptions;
 
 beforeEach(() => {
@@ -18,7 +19,12 @@ beforeEach(() => {
   home = temp("home");
   mkdirSync(join(cwd, ".git"));
   lines = [];
-  base = { argv: [], cwd, home, skillsDir, interactive: false, log: (line) => lines.push(line) };
+  errors = [];
+  base = {
+    argv: [], cwd, home, skillsDir, interactive: false,
+    log: (line) => lines.push(line),
+    error: (line) => errors.push(line),
+  };
 });
 
 /** Every file under root, posix-relative and sorted, ignoring agent marker folders without files. */
@@ -116,19 +122,20 @@ test("warns when a chosen skill already exists in another folder a ticked agent 
 test("non-interactive without --yes returns 1 and writes nothing", async () => {
   mkdirSync(join(cwd, ".claude"));
   expect(await runInit({ ...base, argv: ["init"] })).toBe(1);
-  expect(lines).toEqual(["Not a terminal. Re-run with --yes (and --agents) to install without questions."]);
+  expect(lines).toEqual([]);
+  expect(errors).toEqual(["Not a terminal. Re-run with --yes (and --agents) to install without questions."]);
   expect(exists(cwd, ".claude/skills")).toBe(false);
 });
 
 test("no agents detected and no --agents returns 2", async () => {
   expect(await runInit({ ...base, argv: ["init", "--yes"] })).toBe(2);
-  expect(lines).toEqual(["No agents detected. Pass --agents claude,cursor,codex (any of them)."]);
+  expect(errors).toEqual(["No agents detected. Pass --agents claude,cursor,codex (any of them)."]);
   expect(tree(cwd)).toEqual([]);
 });
 
 test("an unknown skill name returns 2 with the valid names", async () => {
   expect(await runInit({ ...base, argv: ["init", "--yes", "--agents", "claude", "--skills", "nope"] })).toBe(2);
-  expect(lines).toEqual(["Unknown skill: nope. Valid skills: auto-skill, manual-skill"]);
+  expect(errors).toEqual(["Unknown skill: nope. Valid skills: auto-skill, manual-skill"]);
 });
 
 test("--help prints usage and returns 0 even without a terminal", async () => {
