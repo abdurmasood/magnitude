@@ -1,8 +1,8 @@
 # Magnitude
 
-An agent coding framework. Skills and workflows for working with AI coding agents in Claude Code, Cursor and Codex.
+A code writing framework for improving code quality by an order of magnitude. Usable with Claude Code, Cursor and Codex.
 
-## The workflow
+## Workflow
 
 ```
 discuss ──► /calibrate ──► plan ──► implement ──► /slice-commits ──► /open-pr ──► /merge-prs
@@ -11,20 +11,6 @@ discuss ──► /calibrate ──► plan ──► implement ──► /slice
        gate before building     coding-principles
                                 loads automatically while coding
 ```
-
-## Skills
-
-
-| Skill               | What it does                                                                                                           | Runs                        |
-| ------------------- | ---------------------------------------------------------------------------------------------------------------------- | --------------------------- |
-| `coding-principles` | Four rules for writing code: think before coding, keep it simple, make surgical changes, define how success is checked | Automatically, while coding |
-| `calibrate`         | Rereads the conversation and reports what's unclear about the feature, and where the agent slipped, before you build   | When you call it            |
-| `slice-commits`     | Splits a finished working tree into small, readable commits on the right branches, then pushes                         | When you call it            |
-| `open-pr`           | Opens a pull request with a conventional title and a short What / Why body                                             | When you call it            |
-| `merge-prs`         | Merges pull requests into main, including stacked sets, or closes them                                                 | When you call it            |
-
-
-Call a skill with `/name` in Claude Code and Cursor, or `$name` in Codex.
 
 ## Install
 
@@ -40,6 +26,20 @@ Or install the command, then set up:
 npm i -g @magnitudeai/cli
 magnitude init
 ```
+
+## Skills
+
+
+| Skill               | What it does                                                                                                           | Runs                        |
+| ------------------- | ---------------------------------------------------------------------------------------------------------------------- | --------------------------- |
+| `coding-principles` | Four rules for writing code: think before coding, keep it simple, make surgical changes, define how success is checked | Automatically, while coding |
+| `calibrate`         | Rereads the conversation and reports what's unclear about the feature, and where the agent slipped, before you build   | When you call it            |
+| `slice-commits`     | Splits a finished working tree into small, readable commits on the right branches, then pushes                         | When you call it            |
+| `open-pr`           | Opens a pull request with a conventional title and a short What / Why body                                             | When you call it            |
+| `merge-prs`         | Merges pull requests into main, including stacked sets, or closes them                                                 | When you call it            |
+
+
+Call a skill with `/name` in Claude Code and Cursor, or `$name` in Codex.
 
 ## Credits
 
