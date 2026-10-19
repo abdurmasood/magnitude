@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFil
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
-import { applyWrites, nextStepLines, reviewLines } from "../src/write.js";
+import { applyWrites, displayPath, nextStepLines, reviewLines } from "../src/write.js";
 import type { FinalWrite, Plan, Roots, SkillWrite } from "../src/types.js";
 
 const temp = () => mkdtempSync(join(tmpdir(), "magnitude-write-"));
@@ -87,12 +87,20 @@ describe("reviewLines", () => {
     ]);
   });
 
-  test("skips folders with no final write and does not mangle /home2", () => {
+  test("skips folders with no final write and shows project folders relative to the project", () => {
     const writes = [final("/work/app/.agents/skills/c", 1)];
-    expect(reviewLines(plan, writes, { project: "/work/app", home: "/work" })).toEqual([
-      "~/app/.agents/skills: 1 skill, read by Codex",
-      "1 file total",
-    ]);
-    expect(reviewLines(plan, writes, { project: "/work/app", home: "/wor" })[0]).toBe("/work/app/.agents/skills: 1 skill, read by Codex");
+    expect(reviewLines(plan, writes, roots)).toEqual([".agents/skills: 1 skill, read by Codex", "1 file total"]);
+  });
+});
+
+describe("displayPath", () => {
+  const roots: Roots = { project: "/work/app", home: "/home/me" };
+  test("project paths are relative, home paths use ~", () => {
+    expect(displayPath("/work/app/.claude/skills/a", roots)).toBe(".claude/skills/a");
+    expect(displayPath("/home/me/.claude/skills/a", roots)).toBe("~/.claude/skills/a");
+  });
+  test("does not mangle sibling prefixes like /home/me2", () => {
+    expect(displayPath("/home/me2/x", roots)).toBe("/home/me2/x");
+    expect(displayPath("/work/application/x", roots)).toBe("/work/application/x");
   });
 });
