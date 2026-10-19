@@ -24,11 +24,19 @@ Call a skill with `/name` in Claude Code and Cursor, or `$name` in Codex.
 
 ## Install
 
+This project:
+
 ```
 npx @magnitudeai/cli init
 ```
 
-It asks which agents you use, whether to install in this project or globally, and which skills you want. Nothing is written until you confirm.
+Install the CLI on your machine:
+
+```
+npm i -g @magnitudeai/cli
+```
+
+`magnitude init` is the same installer. It asks which agents you use, whether to install in this project or globally, and which skills you want. Nothing is written until you confirm.
 
 | Flag | What it does |
 |---|---|
@@ -37,20 +45,6 @@ It asks which agents you use, whether to install in this project or globally, an
 | `--global` | Install in your home folder instead of the project |
 | `--replace` / `--keep-existing` | Overwrite or keep skills that already exist and differ |
 | `--yes` | Skip every prompt (uses detected agents, all skills, keeps existing) |
-
-The CLI writes the fewest folders that cover your agents:
-
-| Agents | Project folder | Global folder |
-|---|---|---|
-| Claude Code | `.claude/skills` | `~/.claude/skills` |
-| Cursor | `.agents/skills` | `~/.agents/skills` |
-| Codex | `.agents/skills` | `~/.agents/skills` |
-| Claude Code + Cursor | `.claude/skills` | `~/.claude/skills` |
-| Cursor + Codex | `.agents/skills` | `~/.agents/skills` |
-| Claude Code + Codex | `.claude/skills` + `.agents/skills` | `~/.claude/skills` + `~/.agents/skills` |
-| All three | `.claude/skills` + `.agents/skills` ⚠ | `~/.claude/skills` + `~/.agents/skills` ⚠ |
-
-⚠ Cursor reads both folders, so it may show each skill twice.
 
 ## Credits
 
