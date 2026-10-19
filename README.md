@@ -24,19 +24,33 @@ Call a skill with `/name` in Claude Code and Cursor, or `$name` in Codex.
 
 ## Install
 
-A CLI is on the way:
-
 ```
 npx @magnitudeai/cli init
 ```
 
-Until then, copy the skills you want from `skills/` into the folder your agent reads:
+It asks which agents you use, whether to install in this project or globally, and which skills you want. Nothing is written until you confirm.
 
-| Agent | Project folder | Global folder |
+| Flag | What it does |
+|---|---|
+| `--agents claude,cursor,codex` | Pick agents without being asked |
+| `--skills all` or `--skills name,name` | Pick skills without being asked |
+| `--global` | Install in your home folder instead of the project |
+| `--replace` / `--keep-existing` | Overwrite or keep skills that already exist and differ |
+| `--yes` | Skip every prompt (uses detected agents, all skills, keeps existing) |
+
+The CLI writes the fewest folders that cover your agents:
+
+| Agents | Project folder | Global folder |
 |---|---|---|
-| Claude Code | `.claude/skills/` | `~/.claude/skills/` |
-| Cursor | `.claude/skills/` or `.agents/skills/` | `~/.cursor/skills/` |
-| Codex | `.agents/skills/` | `~/.agents/skills/` |
+| Claude Code | `.claude/skills` | `~/.claude/skills` |
+| Cursor | `.agents/skills` | `~/.agents/skills` |
+| Codex | `.agents/skills` | `~/.agents/skills` |
+| Claude Code + Cursor | `.claude/skills` | `~/.claude/skills` |
+| Cursor + Codex | `.agents/skills` | `~/.agents/skills` |
+| Claude Code + Codex | `.claude/skills` + `.agents/skills` | `~/.claude/skills` + `~/.agents/skills` |
+| All three | `.claude/skills` + `.agents/skills` ⚠ | `~/.claude/skills` + `~/.agents/skills` ⚠ |
+
+⚠ Cursor reads both folders, so it may show each skill twice.
 
 ## Credits
 
