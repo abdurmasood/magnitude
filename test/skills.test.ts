@@ -34,6 +34,27 @@ describe("loadSkills", () => {
     expect(() => loadSkills(tmp)).toThrow(/malformed/);
   });
 
+  test("fails fast naming the folder when name differs from the folder", () => {
+    const tmp = mkdtempSync(join(tmpdir(), "skills-"));
+    mkdirSync(join(tmp, "folder-name"));
+    writeFileSync(join(tmp, "folder-name", "SKILL.md"), "---\nname: other-name\ndescription: x\n---\n");
+    expect(() => loadSkills(tmp)).toThrow(/folder-name/);
+  });
+
+  test.each(["../escape", "Upper", "has space", "dot.name"])("fails fast naming the folder for unsafe name %j", (name) => {
+    const tmp = mkdtempSync(join(tmpdir(), "skills-"));
+    mkdirSync(join(tmp, "unsafe"));
+    writeFileSync(join(tmp, "unsafe", "SKILL.md"), `---\nname: "${name}"\ndescription: x\n---\n`);
+    expect(() => loadSkills(tmp)).toThrow(/unsafe/);
+  });
+
+  test("an unsafe name matching its folder still fails", () => {
+    const tmp = mkdtempSync(join(tmpdir(), "skills-"));
+    mkdirSync(join(tmp, "Upper_Case"));
+    writeFileSync(join(tmp, "Upper_Case", "SKILL.md"), "---\nname: Upper_Case\ndescription: x\n---\n");
+    expect(() => loadSkills(tmp)).toThrow(/Upper_Case/);
+  });
+
   test("loads the real bundled skills", () => {
     expect(loadSkills("skills").map((s) => s.name)).toEqual([
       "calibrate", "coding-principles", "merge-prs", "open-pr", "slice-commits",
