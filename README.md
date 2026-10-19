@@ -1,8 +1,8 @@
 # Magnitude
 
-An agent coding framework. Skills and workflows for working with AI coding agents in Claude Code, Cursor and Codex.
+A code writing framework for improving code quality by an order of magnitude. Usable with Claude Code, Cursor and Codex.
 
-## The workflow
+## Workflow
 
 ```
 discuss ──► /calibrate ──► plan ──► implement ──► /slice-commits ──► /open-pr ──► /merge-prs
