@@ -12,39 +12,42 @@ discuss ──► /calibrate ──► plan ──► implement ──► /slice
 
 ## Skills
 
-| Skill | What it does | Runs |
-|---|---|---|
+
+| Skill               | What it does                                                                                                           | Runs                        |
+| ------------------- | ---------------------------------------------------------------------------------------------------------------------- | --------------------------- |
 | `coding-principles` | Four rules for writing code: think before coding, keep it simple, make surgical changes, define how success is checked | Automatically, while coding |
-| `calibrate` | Rereads the conversation and reports what's unclear about the feature, and where the agent slipped, before you build | When you call it |
-| `slice-commits` | Splits a finished working tree into small, readable commits on the right branches, then pushes | When you call it |
-| `open-pr` | Opens a pull request with a conventional title and a short What / Why body | When you call it |
-| `merge-prs` | Merges pull requests into main, including stacked sets, or closes them | When you call it |
+| `calibrate`         | Rereads the conversation and reports what's unclear about the feature, and where the agent slipped, before you build   | When you call it            |
+| `slice-commits`     | Splits a finished working tree into small, readable commits on the right branches, then pushes                         | When you call it            |
+| `open-pr`           | Opens a pull request with a conventional title and a short What / Why body                                             | When you call it            |
+| `merge-prs`         | Merges pull requests into main, including stacked sets, or closes them                                                 | When you call it            |
+
 
 Call a skill with `/name` in Claude Code and Cursor, or `$name` in Codex.
 
 ## Install
 
-This project:
+Set up this project (no CLI left behind):
 
 ```
 npx @magnitudeai/cli init
 ```
 
-Install the CLI on your machine:
+Or install the command, then set up:
 
 ```
 npm i -g @magnitudeai/cli
+magnitude init
 ```
 
-`magnitude init` is the same installer. It asks which agents you use, whether to install in this project or globally, and which skills you want. Nothing is written until you confirm.
 
-| Flag | What it does |
-|---|---|
-| `--agents claude,cursor,codex` | Pick agents without being asked |
-| `--skills all` or `--skills name,name` | Pick skills without being asked |
-| `--global` | Install in your home folder instead of the project |
-| `--replace` / `--keep-existing` | Overwrite or keep skills that already exist and differ |
-| `--yes` | Skip every prompt (uses detected agents, all skills, keeps existing) |
+| Flag                                   | What it does                                                         |
+| -------------------------------------- | -------------------------------------------------------------------- |
+| `--agents claude,cursor,codex`         | Pick agents without being asked                                      |
+| `--skills all` or `--skills name,name` | Pick skills without being asked                                      |
+| `--global`                             | Put skills in your home folder instead of this project               |
+| `--replace` / `--keep-existing`        | Overwrite or keep skills that already exist and differ               |
+| `--yes`                                | Skip every prompt (uses detected agents, all skills, keeps existing) |
+
 
 ## Credits
 
