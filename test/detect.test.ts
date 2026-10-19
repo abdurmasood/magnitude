@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
@@ -67,7 +67,7 @@ describe("detectAgents", () => {
 });
 
 describe("scanFolders", () => {
-  test("reads nested files with posix keys and skips folders without SKILL.md", () => {
+  test("reads nested files with posix keys and includes folders without SKILL.md", () => {
     const folder = join(tmp, ".claude", "skills");
     mkdirSync(join(folder, "alpha", "references"), { recursive: true });
     writeFileSync(join(folder, "alpha", "SKILL.md"), "A");
@@ -76,7 +76,41 @@ describe("scanFolders", () => {
     writeFileSync(join(folder, "stray", "other.md"), "x");
     writeFileSync(join(folder, "loose.md"), "x");
     expect(scanFolders([folder])).toEqual({
-      [folder]: { alpha: { "SKILL.md": "A", "references/n.md": "N" } },
+      [folder]: {
+        alpha: { "SKILL.md": "A", "references/n.md": "N" },
+        stray: { "other.md": "x" },
+      },
+    });
+  });
+
+  test("scans a symlinked skill folder with its files", () => {
+    const folder = join(tmp, "skills");
+    const target = join(tmp, "real");
+    mkdirSync(folder);
+    mkdirSync(target);
+    writeFileSync(join(target, "SKILL.md"), "S");
+    symlinkSync(target, join(folder, "linked"));
+    expect(scanFolders([folder])).toEqual({ [folder]: { linked: { "SKILL.md": "S" } } });
+  });
+
+  test("records a broken-symlink skill folder as present and empty", () => {
+    const folder = join(tmp, "skills");
+    mkdirSync(folder);
+    symlinkSync(join(tmp, "nowhere"), join(folder, "dangling"));
+    expect(scanFolders([folder])).toEqual({ [folder]: { dangling: {} } });
+  });
+
+  test("scans a skill containing a symlinked subdir and a broken link without throwing", () => {
+    const folder = join(tmp, "skills");
+    const extra = join(tmp, "extra");
+    mkdirSync(join(folder, "s"), { recursive: true });
+    mkdirSync(extra);
+    writeFileSync(join(extra, "e.md"), "E");
+    writeFileSync(join(folder, "s", "SKILL.md"), "S");
+    symlinkSync(extra, join(folder, "s", "ref"));
+    symlinkSync(join(tmp, "nowhere"), join(folder, "s", "broken"));
+    expect(scanFolders([folder])).toEqual({
+      [folder]: { s: { "SKILL.md": "S", "ref/e.md": "E" } },
     });
   });
 

@@ -44,16 +44,17 @@ export function detectAgents(root: string): AgentId[] {
   return agents;
 }
 
-/** Snapshots each existing folder's skill subfolders (those with SKILL.md), keyed by the folder string given. */
+/** Snapshots every subfolder (or symlink) of each existing folder, keyed by the folder string given. */
 export function scanFolders(folders: string[]): Scan {
   const scan: Scan = {};
   for (const folder of folders) {
     if (!isDirectory(folder)) continue;
     const skills: Scan[string] = {};
     for (const entry of readdirSync(folder, { withFileTypes: true })) {
-      if (!entry.isDirectory()) continue;
-      const files = readFilesRecursive(join(folder, entry.name));
-      if (files["SKILL.md"] !== undefined) skills[entry.name] = files;
+      if (!entry.isDirectory() && !entry.isSymbolicLink()) continue;
+      const path = join(folder, entry.name);
+      // Any same-named entry must surface, or the planner would overwrite it as "new".
+      skills[entry.name] = isDirectory(path) ? readFilesRecursive(path) : {};
     }
     scan[folder] = skills;
   }

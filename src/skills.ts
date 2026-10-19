@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync } from "node:fs";
+import { readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse } from "yaml";
@@ -15,8 +15,15 @@ export function readFilesRecursive(root: string, prefix = ""): FileMap {
   const files: FileMap = {};
   for (const entry of readdirSync(join(root, prefix), { withFileTypes: true })) {
     const relative = prefix ? `${prefix}/${entry.name}` : entry.name;
-    if (entry.isDirectory()) Object.assign(files, readFilesRecursive(root, relative));
-    else files[relative] = readFileSync(join(root, relative), "utf8");
+    const full = join(root, relative);
+    let stats;
+    try {
+      stats = statSync(full); // follows symlinks
+    } catch {
+      continue; // broken symlink
+    }
+    if (stats.isDirectory()) Object.assign(files, readFilesRecursive(root, relative));
+    else if (stats.isFile()) files[relative] = readFileSync(full, "utf8");
   }
   return files;
 }
