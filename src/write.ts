@@ -2,7 +2,7 @@ import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, sep } from "node:path";
 import type { AgentId, FinalWrite, Plan, Roots } from "./types.js";
 
-const AGENT_NAMES: Record<AgentId, string> = { claude: "Claude Code", cursor: "Cursor", codex: "Codex" };
+export const AGENT_NAMES: Record<AgentId, string> = { claude: "Claude Code", cursor: "Cursor", codex: "Codex" };
 
 export function applyWrites(writes: FinalWrite[]): void {
   for (const write of writes) {
