@@ -11,7 +11,7 @@ export function bundledSkillsDir(): string {
   return resolve(dirname(fileURLToPath(import.meta.url)), "..", "skills");
 }
 
-function readFilesRecursive(root: string, prefix = ""): FileMap {
+export function readFilesRecursive(root: string, prefix = ""): FileMap {
   const files: FileMap = {};
   for (const entry of readdirSync(join(root, prefix), { withFileTypes: true })) {
     const relative = prefix ? `${prefix}/${entry.name}` : entry.name;
