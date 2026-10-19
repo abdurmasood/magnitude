@@ -84,8 +84,8 @@ function buildWrites(answers: Answers, chosen: Skill[], roots: Roots, scan: Scan
   });
 }
 
-function buildWarnings(answers: Answers, chosen: Skill[], roots: Roots, scan: Scan, writes: SkillWrite[]): DuplicateWarning[] {
-  const targets = new Set(writes.map((write) => write.folder));
+function buildWarnings(answers: Answers, chosen: Skill[], roots: Roots, scan: Scan): DuplicateWarning[] {
+  const targets = new Set(targetFolders(answers.agents).map((folder) => folderPath(folder, answers.scope, roots)));
   const ticked = AGENT_ORDER.filter((agent) => answers.agents.includes(agent));
   const readBy = new Map(ticked.map((agent) => [agent, foldersReadBy(agent, roots)]));
   const folders = [...new Set([...readBy.values()].flat())].filter((folder) => !targets.has(folder));
@@ -102,8 +102,7 @@ function buildWarnings(answers: Answers, chosen: Skill[], roots: Roots, scan: Sc
 
 export function buildPlan(answers: Answers, skills: Skill[], roots: Roots, scan: Scan): Plan {
   const chosen = answers.skills.map((name) => skills.find((skill) => skill.name === name)).filter((s): s is Skill => !!s);
-  const writes = buildWrites(answers, chosen, roots, scan);
-  return { writes, warnings: buildWarnings(answers, chosen, roots, scan, writes) };
+  return { writes: buildWrites(answers, chosen, roots, scan), warnings: buildWarnings(answers, chosen, roots, scan) };
 }
 
 export function resolveWrites(plan: Plan, decisions: Record<string, Decision>): FinalWrite[] {
