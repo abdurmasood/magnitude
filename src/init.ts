@@ -1,13 +1,13 @@
 import { readFileSync } from "node:fs";
-import { dirname, relative, resolve, sep } from "node:path";
+import { dirname, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { detectAgents, findProjectRoot, scanFolders } from "./detect.js";
+import { detectAgents, findProjectRoot, scanPresence, scanSkills } from "./detect.js";
 import { parseFlags, resolveNonInteractive, UsageError, type Flags } from "./flags.js";
 import { buildPlan, folderPath, foldersReadBy, resolveWrites, targetFolders } from "./plan.js";
 import { askAnswers, askConfirm, askDecisions } from "./prompts.js";
 import { loadSkills } from "./skills.js";
 import type { AgentId, Answers, Decision, DuplicateWarning, Plan, Roots, Scan, Skill, SkillWrite } from "./types.js";
-import { AGENT_NAMES, applyWrites, nextStepLines, reviewLines } from "./write.js";
+import { AGENT_NAMES, applyWrites, displayPath, nextStepLines, reviewLines } from "./write.js";
 
 export interface InitOptions {
   argv: string[];
@@ -88,6 +88,9 @@ interface RunContext {
 async function install({ log, flags, roots }: RunContext, answers: Answers, plan: Plan): Promise<number> {
   const conflicts = plan.writes.filter((write) => write.status === "conflict");
   const decisions = await chooseDecisions(flags, conflicts);
+  for (const write of conflicts) {
+    if (decisions[write.dest] !== "replace") log(keptLine(write, roots));
+  }
   const writes = resolveWrites(plan, decisions);
   if (writes.length === 0) return printAll(log, [nothingToWrite(conflicts, decisions)]);
   const review = reviewLines(plan, writes, roots);
@@ -119,17 +122,18 @@ async function chooseAnswers(flags: Flags, detected: AgentId[], skills: Skill[])
   return unlessCancelled(await askAnswers(defaults, preset, skills));
 }
 
-/** The target folders plus every folder a ticked agent reads, so duplicates can be warned about. */
+/**
+ * Only the chosen skills: full contents in the target folders (compared with ours), presence only in
+ * every other folder a ticked agent reads (for duplicate warnings). Unrelated user skills are never read.
+ */
 function scanFor(answers: Answers, roots: Roots): Scan {
   const targets = targetFolders(answers.agents).map((folder) => folderPath(folder, answers.scope, roots));
-  const read = answers.agents.flatMap((agent) => foldersReadBy(agent, roots));
-  return scanFolders([...new Set([...targets, ...read])]);
+  const others = answers.agents.flatMap((agent) => foldersReadBy(agent, roots)).filter((folder) => !targets.includes(folder));
+  return { ...scanPresence([...new Set(others)], answers.skills), ...scanSkills(targets, answers.skills) };
 }
 
-function displayPath(path: string, roots: Roots): string {
-  if (path.startsWith(roots.project + sep)) return relative(roots.project, path).split(sep).join("/");
-  if (path.startsWith(roots.home + sep)) return `~/${relative(roots.home, path).split(sep).join("/")}`;
-  return path;
+function keptLine(write: SkillWrite, roots: Roots): string {
+  return `Kept ${displayPath(write.dest, roots)} (differs from ours; use --replace to overwrite)`;
 }
 
 function warningLine(warning: DuplicateWarning, roots: Roots): string {

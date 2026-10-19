@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, relative, resolve } from "node:path";
 import { beforeEach, expect, test } from "vitest";
@@ -86,7 +86,10 @@ test("an existing different skill is kept by default with --yes, replaced with -
 
   expect(await runInit({ ...base, argv })).toBe(0);
   expect(readFileSync(mine, "utf8")).toBe("mine");
-  expect(lines).toContain("Nothing to write. Kept 1 existing skill(s).");
+  expect(lines).toEqual([
+    "Kept .claude/skills/auto-skill (differs from ours; use --replace to overwrite)",
+    "Nothing to write. Kept 1 existing skill(s).",
+  ]);
 
   expect(await runInit({ ...base, argv: [...argv, "--replace"] })).toBe(0);
   expect(readFileSync(mine, "utf8")).toContain("name: auto-skill");
@@ -98,6 +101,55 @@ test("a kept conflict alongside a new skill still writes the new one", async () 
   expect(await runInit({ ...base, argv: ["init", "--yes", "--agents", "claude", "--keep-existing"] })).toBe(0);
   expect(readFileSync(join(cwd, ".claude/skills/auto-skill/SKILL.md"), "utf8")).toBe("mine");
   expect(exists(cwd, ".claude/skills/manual-skill/SKILL.md")).toBe(true);
+  expect(lines[0]).toBe("Kept .claude/skills/auto-skill (differs from ours; use --replace to overwrite)");
+});
+
+test("a kept global conflict is reported with ~", async () => {
+  mkdirSync(join(home, ".claude/skills/auto-skill"), { recursive: true });
+  writeFileSync(join(home, ".claude/skills/auto-skill/SKILL.md"), "mine");
+  const argv = ["init", "--yes", "--agents", "claude", "--global", "--skills", "auto-skill"];
+  expect(await runInit({ ...base, argv })).toBe(0);
+  expect(lines[0]).toBe("Kept ~/.claude/skills/auto-skill (differs from ours; use --replace to overwrite)");
+});
+
+test("unreadable unrelated skills in the target folder and in home do not affect init", async () => {
+  const lock = (path: string) => {
+    mkdirSync(join(path, ".."), { recursive: true });
+    writeFileSync(path, "secret");
+    chmodSync(path, 0o000);
+  };
+  lock(join(cwd, ".claude/skills/mine/secret"));
+  lock(join(home, ".claude/skills/mine/secret"));
+  lock(join(home, ".agents/skills/mine/secret"));
+  expect(await runInit({ ...base, argv: ["init", "--yes", "--agents", "claude,cursor"] })).toBe(0);
+  expect(exists(cwd, ".claude/skills/auto-skill/SKILL.md")).toBe(true);
+  expect(errors).toEqual([]);
+});
+
+test("an unreadable file inside a chosen skill in the target folder fails naming the path", async () => {
+  const secret = join(cwd, ".claude/skills/auto-skill/secret");
+  mkdirSync(join(cwd, ".claude/skills/auto-skill"), { recursive: true });
+  writeFileSync(secret, "s");
+  chmodSync(secret, 0o000);
+  await expect(runInit({ ...base, argv: ["init", "--yes", "--agents", "claude"] })).rejects.toThrow(secret);
+  expect(exists(cwd, ".claude/skills/manual-skill")).toBe(false);
+});
+
+test("a plain file at a skill name is a conflict: kept by default, replaced with --replace", async () => {
+  const path = join(cwd, ".claude/skills/manual-skill");
+  mkdirSync(join(cwd, ".claude/skills"), { recursive: true });
+  writeFileSync(path, "a file");
+  const argv = ["init", "--yes", "--agents", "claude", "--skills", "manual-skill"];
+
+  expect(await runInit({ ...base, argv })).toBe(0);
+  expect(readFileSync(path, "utf8")).toBe("a file");
+  expect(lines).toEqual([
+    "Kept .claude/skills/manual-skill (differs from ours; use --replace to overwrite)",
+    "Nothing to write. Kept 1 existing skill(s).",
+  ]);
+
+  expect(await runInit({ ...base, argv: [...argv, "--replace"] })).toBe(0);
+  expect(tree(join(cwd, ".claude/skills"))).toEqual(["manual-skill/SKILL.md", "manual-skill/references/notes.md"]);
 });
 
 test("second run prints 'Everything is already up to date.' and writes nothing", async () => {

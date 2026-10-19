@@ -1,8 +1,8 @@
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import { detectAgents, findProjectRoot, scanFolders } from "../src/detect.js";
+import { detectAgents, findProjectRoot, scanPresence, scanSkills } from "../src/detect.js";
 
 let tmp: string;
 beforeEach(() => {
@@ -57,6 +57,17 @@ describe("detectAgents", () => {
     expect(detectAgents(tmp)).toEqual([]);
   });
 
+  test("rethrows errors other than a missing entry", () => {
+    const locked = join(tmp, "locked");
+    mkdirSync(locked);
+    chmodSync(locked, 0o000);
+    try {
+      expect(() => detectAgents(locked)).toThrow(/EACCES/);
+    } finally {
+      chmodSync(locked, 0o755);
+    }
+  });
+
   test("reports codex once and orders claude, cursor, codex", () => {
     mkdirSync(join(tmp, ".agents"));
     writeFileSync(join(tmp, "AGENTS.md"), "x");
@@ -66,21 +77,43 @@ describe("detectAgents", () => {
   });
 });
 
-describe("scanFolders", () => {
-  test("reads nested files with posix keys and includes folders without SKILL.md", () => {
+describe("scanSkills", () => {
+  test("reads only the named skills, with nested files under posix keys", () => {
     const folder = join(tmp, ".claude", "skills");
     mkdirSync(join(folder, "alpha", "references"), { recursive: true });
     writeFileSync(join(folder, "alpha", "SKILL.md"), "A");
     writeFileSync(join(folder, "alpha", "references", "n.md"), "N");
     mkdirSync(join(folder, "stray"));
     writeFileSync(join(folder, "stray", "other.md"), "x");
-    writeFileSync(join(folder, "loose.md"), "x");
-    expect(scanFolders([folder])).toEqual({
-      [folder]: {
-        alpha: { "SKILL.md": "A", "references/n.md": "N" },
-        stray: { "other.md": "x" },
-      },
+    expect(scanSkills([folder], ["alpha", "absent"])).toEqual({
+      [folder]: { alpha: { "SKILL.md": "A", "references/n.md": "N" } },
     });
+  });
+
+  test("ignores an unreadable unrelated skill", () => {
+    const folder = join(tmp, "skills");
+    mkdirSync(join(folder, "mine"), { recursive: true });
+    writeFileSync(join(folder, "mine", "secret"), "s");
+    chmodSync(join(folder, "mine", "secret"), 0o000);
+    mkdirSync(join(folder, "alpha"));
+    writeFileSync(join(folder, "alpha", "SKILL.md"), "A");
+    expect(scanSkills([folder], ["alpha"])).toEqual({ [folder]: { alpha: { "SKILL.md": "A" } } });
+  });
+
+  test("fails naming the path when a chosen skill has an unreadable file", () => {
+    const folder = join(tmp, "skills");
+    mkdirSync(join(folder, "alpha"), { recursive: true });
+    const secret = join(folder, "alpha", "secret");
+    writeFileSync(secret, "s");
+    chmodSync(secret, 0o000);
+    expect(() => scanSkills([folder], ["alpha"])).toThrow(secret);
+  });
+
+  test("records a plain file at a skill name as present and empty", () => {
+    const folder = join(tmp, "skills");
+    mkdirSync(folder);
+    writeFileSync(join(folder, "alpha"), "not a folder");
+    expect(scanSkills([folder], ["alpha"])).toEqual({ [folder]: { alpha: {} } });
   });
 
   test("scans a symlinked skill folder with its files", () => {
@@ -90,14 +123,14 @@ describe("scanFolders", () => {
     mkdirSync(target);
     writeFileSync(join(target, "SKILL.md"), "S");
     symlinkSync(target, join(folder, "linked"));
-    expect(scanFolders([folder])).toEqual({ [folder]: { linked: { "SKILL.md": "S" } } });
+    expect(scanSkills([folder], ["linked"])).toEqual({ [folder]: { linked: { "SKILL.md": "S" } } });
   });
 
   test("records a broken-symlink skill folder as present and empty", () => {
     const folder = join(tmp, "skills");
     mkdirSync(folder);
     symlinkSync(join(tmp, "nowhere"), join(folder, "dangling"));
-    expect(scanFolders([folder])).toEqual({ [folder]: { dangling: {} } });
+    expect(scanSkills([folder], ["dangling"])).toEqual({ [folder]: { dangling: {} } });
   });
 
   test("scans a skill containing a symlinked subdir and a broken link without throwing", () => {
@@ -109,15 +142,31 @@ describe("scanFolders", () => {
     writeFileSync(join(folder, "s", "SKILL.md"), "S");
     symlinkSync(extra, join(folder, "s", "ref"));
     symlinkSync(join(tmp, "nowhere"), join(folder, "s", "broken"));
-    expect(scanFolders([folder])).toEqual({
+    expect(scanSkills([folder], ["s"])).toEqual({
       [folder]: { s: { "SKILL.md": "S", "ref/e.md": "E" } },
     });
   });
 
-  test("omits missing folders and maps an empty existing folder to {}", () => {
+  test("omits missing folders and maps an existing folder without the skills to {}", () => {
     const empty = join(tmp, "empty");
     mkdirSync(empty);
     const missing = join(tmp, "missing");
-    expect(scanFolders([empty, missing])).toEqual({ [empty]: {} });
+    expect(scanSkills([empty, missing], ["alpha"])).toEqual({ [empty]: {} });
+  });
+});
+
+describe("scanPresence", () => {
+  test("records named entries of any type as {} without reading them", () => {
+    const folder = join(tmp, "skills");
+    mkdirSync(join(folder, "alpha"), { recursive: true });
+    writeFileSync(join(folder, "alpha", "secret"), "s");
+    chmodSync(join(folder, "alpha", "secret"), 0o000);
+    writeFileSync(join(folder, "beta"), "file");
+    symlinkSync(join(tmp, "nowhere"), join(folder, "gamma"));
+    mkdirSync(join(folder, "unrelated"));
+    const missing = join(tmp, "missing");
+    expect(scanPresence([folder, missing], ["alpha", "beta", "gamma", "delta"])).toEqual({
+      [folder]: { alpha: {}, beta: {}, gamma: {} },
+    });
   });
 });
