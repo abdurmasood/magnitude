@@ -27,7 +27,13 @@ function parseSkill(folder: string, dir: string): Skill {
   if (skillMd === undefined) throw new Error(`Skill "${folder}": missing SKILL.md`);
   const match = FRONTMATTER.exec(skillMd);
   if (!match) throw new Error(`Skill "${folder}": SKILL.md has no frontmatter block`);
-  const data: unknown = parse(match[1]);
+  let data: unknown;
+  try {
+    data = parse(match[1]);
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    throw new Error(`Skill "${folder}": invalid frontmatter YAML: ${reason}`);
+  }
   const fields = (typeof data === "object" && data !== null ? data : {}) as Record<string, unknown>;
   const { name, description } = fields;
   if (typeof name !== "string" || name.trim() === "") {

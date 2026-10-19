@@ -27,6 +27,13 @@ describe("loadSkills", () => {
     expect(() => loadSkills(tmp)).toThrow(/nameless/);
   });
 
+  test("fails fast naming the folder when frontmatter is invalid YAML", () => {
+    const tmp = mkdtempSync(join(tmpdir(), "skills-"));
+    mkdirSync(join(tmp, "malformed"));
+    writeFileSync(join(tmp, "malformed", "SKILL.md"), "---\nname: [unclosed\n---\n");
+    expect(() => loadSkills(tmp)).toThrow(/malformed/);
+  });
+
   test("loads the real bundled skills", () => {
     expect(loadSkills("skills").map((s) => s.name)).toEqual([
       "calibrate", "coding-principles", "merge-prs", "open-pr", "slice-commits",
