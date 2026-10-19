@@ -41,16 +41,6 @@ npm i -g @magnitudeai/cli
 magnitude init
 ```
 
-
-| Flag                                   | What it does                                                         |
-| -------------------------------------- | -------------------------------------------------------------------- |
-| `--agents claude,cursor,codex`         | Pick agents without being asked                                      |
-| `--skills all` or `--skills name,name` | Pick skills without being asked                                      |
-| `--global`                             | Put skills in your home folder instead of this project               |
-| `--replace` / `--keep-existing`        | Overwrite or keep skills that already exist and differ               |
-| `--yes`                                | Skip every prompt (uses detected agents, all skills, keeps existing) |
-
-
 ## Credits
 
 `coding-principles` and `EXAMPLES.md` started from [andrej-karpathy-skills](https://github.com/multica-ai/andrej-karpathy-skills) by Jiayuan Zhang and contributors, based on [Andrej Karpathy's observations](https://x.com/karpathy/status/2015883857489522876) on LLM coding pitfalls.
