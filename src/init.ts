@@ -5,10 +5,11 @@ import { detectAgents, findProjectRoot, scanPresence, scanSkills } from "./detec
 import { parseFlags, resolveNonInteractive, UsageError, type Flags } from "./flags.js";
 import { buildPlan, folderPath, foldersReadBy, resolveInstructions, resolveWrites, targetFolders, type PrinciplesContext } from "./plan.js";
 import { firstClaudeInstruction, loadLegacySkill, loadPrinciplesBody, principleDestinations } from "./principles.js";
-import { askAnswers, askConfirm, askDecisions } from "./prompts.js";
+import { askAnswers, askConfirm, askDecisions, type Conflict } from "./prompts.js";
 import { isMissing, loadSkills, readFilesRecursive } from "./skills.js";
 import type { AgentId, Answers, Decision, DuplicateWarning, FileMap, Plan, Roots, Scan, Skill, SkillWrite } from "./types.js";
-import { AGENT_NAMES, applyFileWrites, applyRemovals, applyWrites, displayPath, nextStepLines, reviewLines } from "./write.js";
+import { headerLine } from "./theme.js";
+import { AGENT_NAMES, applyFileWrites, applyRemovals, applyWrites, displayPath, finishedLines, nextStepLines, reviewEntries, reviewLines } from "./write.js";
 
 export interface InitOptions {
   argv: string[];
@@ -74,6 +75,7 @@ async function run(opts: InitOptions): Promise<number> {
     return 1;
   }
   const roots: Roots = { project: findProjectRoot(opts.cwd), home: opts.home };
+  if (opts.interactive && !flags.yes) printAll(opts.log, [headerLine(), ""]);
   const answers = await chooseAnswers(flags, detectAgents(roots.project), skills);
   const plan = buildPlan(answers, skills, roots, scanFor(answers, roots), principlesFor(answers, roots));
   for (const warning of plan.warnings) opts.log(warningLine(warning, roots));
@@ -88,9 +90,12 @@ interface RunContext {
 
 async function install({ log, flags, roots }: RunContext, answers: Answers, plan: Plan): Promise<number> {
   for (const note of plan.notes) log(note);
-  const conflicts = [
-    ...plan.writes.filter((write) => write.status === "conflict").map((write) => ({ dest: write.dest })),
-    ...plan.instructions.filter((write) => write.status === "conflict").map((write) => ({ dest: write.dest, instruction: true })),
+  const label = (dest: string) => displayPath(dest, roots);
+  const conflicts: Conflict[] = [
+    ...plan.writes.filter((write) => write.status === "conflict").map((write) => ({ dest: write.dest, label: label(write.dest) })),
+    ...plan.instructions
+      .filter((write) => write.status === "conflict")
+      .map((write) => ({ dest: write.dest, label: label(write.dest), instruction: true })),
   ];
   const decisions = await chooseDecisions(flags, conflicts);
   for (const write of plan.writes) {
@@ -104,13 +109,14 @@ async function install({ log, flags, roots }: RunContext, answers: Answers, plan
   if (writes.length === 0 && files.length === 0 && plan.removals.length === 0) {
     return printAll(log, [nothingToWrite(conflicts, decisions)]);
   }
-  const review = reviewLines(plan, writes, roots, files, plan.removals);
-  review.forEach((line) => log(line));
-  if (!flags.yes && !unlessCancelled(await askConfirm(review))) throw new Cancelled();
+  const review = reviewEntries(plan, writes, roots, files, plan.removals);
+  if (flags.yes) printAll(log, reviewLines(plan, writes, roots, files, plan.removals));
+  else if (!unlessCancelled(await askConfirm(review.entries, review.fileCount))) throw new Cancelled();
   applyWrites(writes);
   applyFileWrites(files);
   applyRemovals(plan.removals.map((removal) => removal.dest));
-  return printAll(log, nextStepLines(answers.agents, answers.skills));
+  if (flags.yes) return printAll(log, nextStepLines(answers.agents, answers.skills));
+  return printAll(log, finishedLines(review.fileCount, answers.agents, answers.skills));
 }
 
 function printAll(log: InitOptions["log"], lines: string[]): number {
@@ -198,7 +204,7 @@ function warningLine(warning: DuplicateWarning, roots: Roots): string {
   return `${agents} will also load ${displayPath(`${warning.folder}${sep}${warning.skill}`, roots)}`;
 }
 
-async function chooseDecisions(flags: Flags, conflicts: { dest: string; instruction?: boolean }[]): Promise<Record<string, Decision>> {
+async function chooseDecisions(flags: Flags, conflicts: Conflict[]): Promise<Record<string, Decision>> {
   if (conflicts.length === 0) return {};
   const all = (decision: Decision) => Object.fromEntries(conflicts.map((write) => [write.dest, decision]));
   if (flags.replace) return all("replace");

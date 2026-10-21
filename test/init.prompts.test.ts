@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { stripVTControlCharacters as plain } from "node:util";
 import { beforeEach, expect, test, vi } from "vitest";
 import { runInit, type InitOptions } from "../src/init.js";
 import { upsertPrinciples } from "../src/principles.js";
@@ -31,7 +32,7 @@ beforeEach(() => {
   errors = [];
   base = {
     argv: ["init"], cwd, home, skillsDir, interactive: true,
-    log: (line) => lines.push(line),
+    log: (line) => lines.push(plain(line)),
     error: (line) => errors.push(line),
   };
   // Echo the preset back as the answers, filling open questions from the defaults.
@@ -93,7 +94,7 @@ test("a differing principles block is prompted as an instruction conflict", asyn
   writeFileSync(dest, old);
   vi.mocked(askDecisions).mockResolvedValue({ [dest]: "keep" });
   expect(await runInit(base)).toBe(0);
-  expect(vi.mocked(askDecisions).mock.calls[0][0]).toContainEqual({ dest, instruction: true });
+  expect(vi.mocked(askDecisions).mock.calls[0][0]).toContainEqual({ dest, label: "AGENTS.md", instruction: true });
   expect(readFileSync(dest, "utf8")).toBe(old);
 });
 
@@ -102,7 +103,7 @@ test("answering replace replaces the conflicting skill", async () => {
   const dest = join(cwd, ".claude/skills/auto-skill");
   vi.mocked(askDecisions).mockResolvedValue({ [dest]: "replace" });
   expect(await runInit(base)).toBe(0);
-  expect(vi.mocked(askDecisions).mock.calls[0][0].map((write) => write.dest)).toEqual([dest]);
+  expect(vi.mocked(askDecisions).mock.calls[0][0]).toEqual([{ dest, label: ".claude/skills/auto-skill" }]);
   expect(readFileSync(join(dest, "SKILL.md"), "utf8")).toContain("name: auto-skill");
   expect(lines.some((line) => line.startsWith("Kept"))).toBe(false);
 });
@@ -112,7 +113,28 @@ test("answering keep logs the kept skill and writes the rest", async () => {
   const dest = join(cwd, ".claude/skills/auto-skill");
   vi.mocked(askDecisions).mockResolvedValue({ [dest]: "keep" });
   expect(await runInit(base)).toBe(0);
-  expect(lines[0]).toBe("Kept .claude/skills/auto-skill (differs from ours; use --replace to overwrite)");
+  expect(lines).toContain("Kept .claude/skills/auto-skill (differs from ours; use --replace to overwrite)");
   expect(readFileSync(join(dest, "SKILL.md"), "utf8")).toBe("mine");
   expect(existsSync(join(cwd, ".claude/skills/manual-skill/SKILL.md"))).toBe(true);
+});
+
+test("an interactive run opens with the header and ends with the finished screen", async () => {
+  expect(await runInit(base)).toBe(0);
+  expect(lines.slice(0, 2)).toEqual(["▁▃▅▇ magnitude   skills for Claude Code, Cursor and Codex", ""]);
+  expect(lines.slice(-6)).toEqual([
+    "✓ agents ── ✓ location ── ✓ skills ── ✓ review",
+    "",
+    "Wrote 4 files.",
+    "",
+    "Next  /auto-skill  in Claude Code",
+    "Docs  github.com/abdurmasood/magnitude",
+  ]);
+});
+
+test("an interactive run shows the review inside the confirm question instead of logging it", async () => {
+  expect(await runInit(base)).toBe(0);
+  const [entries, fileCount] = vi.mocked(askConfirm).mock.calls[0];
+  expect(entries).toContainEqual({ path: ".claude/skills", detail: "2 skills, read by Claude Code", removal: false });
+  expect(fileCount).toBe(4);
+  expect(lines.some((line) => line.includes("read by") || line.endsWith("files total"))).toBe(false);
 });
