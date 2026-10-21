@@ -36,6 +36,7 @@ export interface PickerStep<T> {
 }
 
 const REQUIRED = "Choose at least one.";
+const REQUIRED_HINT = "select one to continue";
 
 function chosen<T>(options: PickerOption<T>[], selected: readonly T[]): T[] {
   return options.filter((option) => selected.includes(option.value)).map((option) => option.value);
@@ -177,6 +178,8 @@ export interface RenderInput<T> {
   columns?: number;
   /** Height of the current step's bar while it rises; undefined once it has settled. */
   riseHeight?: number;
+  /** Set on a required list. Submit is disabled and this shows beside it while nothing is selected. */
+  requiredHint?: string;
 }
 
 function optionLines<T>(input: RenderInput<T>): string[] {
@@ -191,15 +194,32 @@ function optionLines<T>(input: RenderInput<T>): string[] {
   );
 }
 
+/**
+ * The reason sits on the Submit row so the frame never grows when it appears. It is dim while Submit is
+ * disabled and turns yellow once someone presses it anyway. Too narrow for one row, it drops to the next.
+ */
+function submitLines<T>(input: RenderInput<T>): string[] {
+  const focused = input.state.cursor === input.options.length;
+  const blocked = input.requiredHint !== undefined && input.state.selected.length === 0;
+  const head = `${cursorBar(focused)}${submitLabel(focused, !blocked)}`;
+  const reason = blocked ? input.requiredHint ?? "" : input.state.notice;
+  if (reason === "") return [head];
+  const text = input.state.notice === "" ? styleText("dim", reason) : foreground("yellow", `▲ ${reason}`);
+  const width = `▌  Submit   ▲ ${reason}`.length;
+  if (width > (input.columns ?? 80)) return [head, `  ${text}`];
+  return [`${head}  ${text}`];
+}
+
 /** Submit and cancel render nothing, so a finished question leaves no frame behind. */
 export function renderPicker<T>(input: RenderInput<T>): string {
   if (input.phase !== "active") return "";
-  const onSubmit = input.state.cursor === input.options.length;
   const lines = [headerLine(input.step, input.riseHeight), "", stepperLine(input.step), "", styleText("bold", input.message), ...(input.body ?? []), ""];
-  lines.push(...optionLines(input), "", `${cursorBar(onSubmit)}${submitLabel(onSubmit)}`);
-  if (input.state.notice !== "") lines.push(foreground("yellow", `  ${input.state.notice}`));
-  lines.push("", footerLine());
+  lines.push(...optionLines(input), "", ...submitLines(input), "", footerLine());
   return lines.join("\n");
+}
+
+function requiredHint(required: boolean, hint: string | undefined): string | undefined {
+  return required ? hint ?? REQUIRED_HINT : undefined;
 }
 
 interface Held<T> {
@@ -215,6 +235,8 @@ interface PickOptions<T> {
   step: Step;
   body?: string[];
   required?: boolean;
+  /** Shown beside the disabled Submit while a required list is empty. */
+  requiredHint?: string;
   /** Animate the current step's bar rising. Off for repeat questions on the same step. Defaults to true. */
   rise?: boolean;
   input?: Readable;
@@ -249,6 +271,7 @@ class ListPrompt<T> extends Prompt<T[]> {
             body: spec.body,
             columns: getColumns(spec.output ?? stdout),
             riseHeight: held.riseHeight,
+            requiredHint: requiredHint(required, spec.requiredHint),
           });
         },
       },
@@ -326,6 +349,8 @@ export interface WizardPage<T> {
   initial: readonly T[];
   multiple: boolean;
   required?: boolean;
+  /** Shown beside the disabled Submit while a required page is empty. */
+  requiredHint?: string;
   step: Step;
   body?: string[];
   /** When false, this page does not play the rise even if its step has not been shown. */
@@ -383,6 +408,7 @@ class WizardPrompt<T> extends Prompt<T[][]> {
             body: page.body,
             columns: getColumns(output ?? stdout),
             riseHeight: held.riseHeight,
+            requiredHint: requiredHint(page.required === true, page.requiredHint),
           });
         },
       },

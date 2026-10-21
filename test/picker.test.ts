@@ -222,12 +222,53 @@ test("the active frame shows the header, the stepper, the highlight, the marks, 
   expect(lines).toContain("▌  Submit ");
   expect(lines[lines.length - 1]).toContain("←→");
   expect(lines[lines.length - 1]).toContain("↑↓");
-  const blocked = press({ ...state, cursor: agents.length, selected: [] }, "enter", agents, true, true);
-  const error = plainLines(
-    renderPicker({ message: "Which agents do you use?", options: agents, state: blocked.state, multiple: true, phase: "active", step: 0, columns: 80 }),
-  );
-  expect(error).toContain("▌  Submit ");
-  expect(error).toContain("  Choose at least one.");
+});
+
+describe("a required list with nothing selected", () => {
+  beforeEach(() => setColorDepth(24));
+  afterEach(() => setColorDepth(undefined));
+
+  const empty = { ...initialPickerState(agents, [], true), cursor: agents.length };
+  const render = (state: PickerState<string>, columns = 80) =>
+    renderPicker({
+      message: "Which agents do you use?",
+      options: agents,
+      state,
+      multiple: true,
+      phase: "active",
+      step: 0,
+      columns,
+      requiredHint: "select an agent to continue",
+    });
+
+  test("shows the reason beside Submit before anyone presses it", () => {
+    expect(plainLines(render(empty))).toContain("▌  Submit   select an agent to continue");
+  });
+
+  test("marks the reason once Submit is pressed anyway, without adding a line", () => {
+    const blocked = press(empty, "enter", agents, true, true).state;
+    const before = plainLines(render(empty));
+    const after = plainLines(render(blocked));
+    expect(after).toContain("▌  Submit   ▲ select an agent to continue");
+    expect(after.length).toBe(before.length);
+    expect(render(blocked)).toContain("\x1b[38;2;230;199;108m▲ select an agent to continue");
+  });
+
+  test("draws Submit in gray instead of the brand purple", () => {
+    expect(render(empty)).toContain("\x1b[48;2;52;56;61m\x1b[38;2;85;91;97m Submit ");
+  });
+
+  test("drops the reason under Submit when the row is too narrow", () => {
+    const lines = plainLines(render(empty, 30));
+    expect(lines).toContain("▌  Submit ");
+    expect(lines).toContain("  select an agent to continue");
+  });
+
+  test("clears the reason and enables Submit after a selection", () => {
+    const picked = { ...empty, selected: ["claude"] };
+    expect(plainLines(render(picked))).toContain("▌  Submit ");
+    expect(render(picked)).not.toContain("select an agent");
+  });
 });
 
 test("a single choice uses a radio mark", () => {
