@@ -1,5 +1,5 @@
 import { confirm, isCancel, multiselect, select } from "@clack/prompts";
-import type { AgentId, Answers, Decision, Scope, Skill, SkillWrite } from "./types.js";
+import type { AgentId, Answers, Decision, Scope, Skill } from "./types.js";
 
 const AGENT_OPTIONS: { value: AgentId; label: string; signal: string }[] = [
   { value: "claude", label: "Claude Code", signal: "found .claude/" },
@@ -64,11 +64,13 @@ export async function askAnswers(defaults: Answers, preset: Partial<Answers>, sk
   return { agents, scope, skills: chosen };
 }
 
-export async function askDecisions(conflicts: SkillWrite[]): Promise<Record<string, Decision> | null> {
+export async function askDecisions(conflicts: { dest: string; instruction?: boolean }[]): Promise<Record<string, Decision> | null> {
   const decisions: Record<string, Decision> = {};
   for (const conflict of conflicts) {
     const answer = await select<Decision>({
-      message: `${conflict.dest} already exists and differs. Replace it?`,
+      message: conflict.instruction
+        ? `Coding principles in ${conflict.dest} differ. Replace them?`
+        : `${conflict.dest} already exists and differs. Replace it?`,
       options: [
         { value: "keep", label: "No, keep mine" },
         { value: "replace", label: "Yes, replace" },

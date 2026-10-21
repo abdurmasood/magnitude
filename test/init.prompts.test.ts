@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { beforeEach, expect, test, vi } from "vitest";
 import { runInit, type InitOptions } from "../src/init.js";
+import { upsertPrinciples } from "../src/principles.js";
 import { askAnswers, askConfirm, askDecisions } from "../src/prompts.js";
 
 vi.mock("../src/prompts.js", () => ({
@@ -84,6 +85,16 @@ test("cancelling a conflict question returns 1 and writes nothing", async () => 
   expect(readFileSync(join(cwd, ".claude/skills/auto-skill/SKILL.md"), "utf8")).toBe("mine");
   expect(existsSync(join(cwd, ".claude/skills/manual-skill"))).toBe(false);
   expect(askConfirm).not.toHaveBeenCalled();
+});
+
+test("a differing principles block is prompted as an instruction conflict", async () => {
+  const dest = join(cwd, "AGENTS.md");
+  const old = upsertPrinciples("# Stay\n", "old\n").text;
+  writeFileSync(dest, old);
+  vi.mocked(askDecisions).mockResolvedValue({ [dest]: "keep" });
+  expect(await runInit(base)).toBe(0);
+  expect(vi.mocked(askDecisions).mock.calls[0][0]).toContainEqual({ dest, instruction: true });
+  expect(readFileSync(dest, "utf8")).toBe(old);
 });
 
 test("answering replace replaces the conflicting skill", async () => {

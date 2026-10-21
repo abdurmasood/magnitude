@@ -4,6 +4,7 @@ import { join, relative, resolve } from "node:path";
 import { beforeEach, expect, test } from "vitest";
 import { runInit, type InitOptions } from "../src/init.js";
 import { CODEX_MANUAL_YAML } from "../src/plan.js";
+import { CURSOR_GLOBAL_NOTE, loadPrinciplesBody, upsertPrinciples } from "../src/principles.js";
 
 const skillsDir = resolve("test/fixtures/skills");
 const temp = (label: string) => mkdtempSync(join(tmpdir(), `magnitude-init-${label}-`));
@@ -51,6 +52,7 @@ test("--yes with detected Claude + Cursor writes only .claude/skills", async () 
     ".claude/skills/auto-skill/SKILL.md",
     ".claude/skills/manual-skill/SKILL.md",
     ".claude/skills/manual-skill/references/notes.md",
+    "AGENTS.md",
   ]);
   expect(exists(cwd, ".cursor/skills")).toBe(false);
   expect(lines).toContain("Claude Code / Cursor: /auto-skill");
@@ -63,6 +65,7 @@ test("Codex writes openai.yaml for manual-only skills", async () => {
     ".agents/skills/manual-skill/SKILL.md",
     ".agents/skills/manual-skill/agents/openai.yaml",
     ".agents/skills/manual-skill/references/notes.md",
+    "AGENTS.md",
   ]);
   expect(readFileSync(join(cwd, ".agents/skills/manual-skill/agents/openai.yaml"), "utf8")).toBe(CODEX_MANUAL_YAML);
   expect(lines).toContain("Codex: $auto-skill");
@@ -71,11 +74,13 @@ test("Codex writes openai.yaml for manual-only skills", async () => {
 test("--global writes under home, not cwd", async () => {
   expect(await runInit({ ...base, argv: ["init", "--yes", "--agents", "claude", "--global"] })).toBe(0);
   expect(tree(home)).toEqual([
+    ".claude/CLAUDE.md",
     ".claude/skills/auto-skill/SKILL.md",
     ".claude/skills/manual-skill/SKILL.md",
     ".claude/skills/manual-skill/references/notes.md",
   ]);
   expect(exists(cwd, ".claude")).toBe(false);
+  expect(exists(cwd, "AGENTS.md")).toBe(false);
 });
 
 test("an existing different skill is kept by default with --yes, replaced with --replace", async () => {
@@ -88,7 +93,9 @@ test("an existing different skill is kept by default with --yes, replaced with -
   expect(readFileSync(mine, "utf8")).toBe("mine");
   expect(lines).toEqual([
     "Kept .claude/skills/auto-skill (differs from ours; use --replace to overwrite)",
-    "Nothing to write. Kept 1 existing skill(s).",
+    "AGENTS.md: coding principles",
+    "1 file total",
+    "Claude Code: /auto-skill",
   ]);
 
   expect(await runInit({ ...base, argv: [...argv, "--replace"] })).toBe(0);
@@ -145,7 +152,9 @@ test("a plain file at a skill name is a conflict: kept by default, replaced with
   expect(readFileSync(path, "utf8")).toBe("a file");
   expect(lines).toEqual([
     "Kept .claude/skills/manual-skill (differs from ours; use --replace to overwrite)",
-    "Nothing to write. Kept 1 existing skill(s).",
+    "AGENTS.md: coding principles",
+    "1 file total",
+    "Claude Code: /manual-skill",
   ]);
 
   expect(await runInit({ ...base, argv: [...argv, "--replace"] })).toBe(0);
@@ -193,6 +202,81 @@ test("an unknown skill name returns 2 with the valid names", async () => {
 test("--help prints usage and returns 0 even without a terminal", async () => {
   expect(await runInit({ ...base, argv: ["--help"] })).toBe(0);
   expect(lines.join("\n")).toContain("magnitude init [--agents claude,cursor,codex]");
+});
+
+test("project scope writes AGENTS.md and does not create CLAUDE.md", async () => {
+  expect(await runInit({ ...base, argv: ["init", "--yes", "--agents", "claude,cursor"] })).toBe(0);
+  expect(readFileSync(join(cwd, "AGENTS.md"), "utf8")).toContain("# Coding Principles");
+  expect(exists(cwd, "CLAUDE.md")).toBe(false);
+  expect(exists(cwd, ".claude/CLAUDE.md")).toBe(false);
+});
+
+test("an existing CLAUDE.md keeps its text and gains the block, and so does AGENTS.md", async () => {
+  writeFileSync(join(cwd, "CLAUDE.md"), "# Mine\n");
+  expect(await runInit({ ...base, argv: ["init", "--yes", "--agents", "claude"] })).toBe(0);
+  const claude = readFileSync(join(cwd, "CLAUDE.md"), "utf8");
+  expect(claude.startsWith("# Mine\n\n")).toBe(true);
+  expect(claude).toContain("<!-- magnitude:coding-principles -->");
+  expect(readFileSync(join(cwd, "AGENTS.md"), "utf8")).toContain("<!-- magnitude:coding-principles -->");
+});
+
+test("an identical principles block is not rewritten", async () => {
+  const text = upsertPrinciples(undefined, loadPrinciplesBody()).text;
+  writeFileSync(join(cwd, "AGENTS.md"), text);
+  expect(await runInit({ ...base, argv: ["init", "--yes", "--agents", "cursor"] })).toBe(0);
+  expect(readFileSync(join(cwd, "AGENTS.md"), "utf8")).toBe(text);
+});
+
+test("a different principles block is kept with --yes and replaced without touching the rest", async () => {
+  const old = upsertPrinciples("# Stay\n", "old\n").text;
+  const path = join(cwd, "AGENTS.md");
+  writeFileSync(path, old);
+  expect(await runInit({ ...base, argv: ["init", "--yes", "--agents", "cursor"] })).toBe(0);
+  expect(readFileSync(path, "utf8")).toBe(old);
+  expect(lines).toContain("Kept AGENTS.md (coding principles differ; use --replace to overwrite)");
+
+  lines = [];
+  expect(await runInit({ ...base, argv: ["init", "--yes", "--agents", "cursor", "--replace"] })).toBe(0);
+  const next = readFileSync(path, "utf8");
+  expect(next.startsWith("# Stay\n\n")).toBe(true);
+  expect(next).toContain("# Coding Principles");
+  expect(next).not.toContain("\nold\n");
+});
+
+test("global Claude and Codex write their home files", async () => {
+  expect(await runInit({ ...base, argv: ["init", "--yes", "--agents", "claude", "--global", "--skills", "auto-skill"] })).toBe(0);
+  expect(readFileSync(join(home, ".claude", "CLAUDE.md"), "utf8")).toContain("# Coding Principles");
+  expect(exists(cwd, "AGENTS.md")).toBe(false);
+
+  expect(await runInit({ ...base, argv: ["init", "--yes", "--agents", "codex", "--global", "--skills", "auto-skill"] })).toBe(0);
+  expect(readFileSync(join(home, ".codex", "AGENTS.md"), "utf8")).toContain("# Coding Principles");
+});
+
+test("global Cursor writes no principles file, warns, and still installs the skill", async () => {
+  expect(await runInit({ ...base, argv: ["init", "--yes", "--agents", "cursor", "--global", "--skills", "auto-skill"] })).toBe(0);
+  expect(exists(home, ".agents/skills/auto-skill/SKILL.md")).toBe(true);
+  expect(exists(home, "AGENTS.md")).toBe(false);
+  expect(exists(home, ".claude/CLAUDE.md")).toBe(false);
+  expect(exists(home, ".codex/AGENTS.md")).toBe(false);
+  expect(lines).toContain(CURSOR_GLOBAL_NOTE);
+});
+
+test("an identical old coding-principles skill is removed and an edited one is kept", async () => {
+  const legacy = readFileSync(resolve("instructions/legacy/coding-principles/SKILL.md"), "utf8");
+  const folder = join(cwd, ".claude/skills/coding-principles");
+  mkdirSync(folder, { recursive: true });
+  writeFileSync(join(folder, "SKILL.md"), legacy);
+  expect(await runInit({ ...base, argv: ["init", "--yes", "--agents", "claude", "--skills", "auto-skill"] })).toBe(0);
+  expect(existsSync(folder)).toBe(false);
+  expect(lines).toContain("remove .claude/skills/coding-principles");
+
+  const edited = join(cwd, ".agents/skills/coding-principles");
+  mkdirSync(edited, { recursive: true });
+  writeFileSync(join(edited, "SKILL.md"), "edited\n");
+  lines = [];
+  expect(await runInit({ ...base, argv: ["init", "--yes", "--agents", "codex", "--skills", "auto-skill"] })).toBe(0);
+  expect(readFileSync(join(edited, "SKILL.md"), "utf8")).toBe("edited\n");
+  expect(lines).toContain("Kept .agents/skills/coding-principles (old coding-principles skill was edited; remove it yourself)");
 });
 
 test("--version prints the package.json version and returns 0", async () => {
