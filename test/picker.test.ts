@@ -3,9 +3,12 @@ import { stripVTControlCharacters as plain } from "node:util";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import {
   initialPickerState,
+  initialWizardState,
   pick,
   renderPicker,
   stepPicker,
+  stepWizard,
+  wizard,
   type PickerKey,
   type PickerOption,
   type PickerState,
@@ -103,6 +106,97 @@ test("space changes nothing", () => {
   expect(next.state).toEqual(start);
 });
 
+const sections = [
+  { options: agents, multiple: true, required: true },
+  { options: scope, multiple: false, required: false },
+];
+
+const wizardPages = [
+  { options: agents, initial: ["claude", "cursor"], multiple: true },
+  { options: scope, initial: ["project"], multiple: false },
+];
+
+const move = (state: ReturnType<typeof initialWizardState<string>>, key: "left" | "right" | PickerKey, opts?: { allowBack?: boolean; rightOnLast?: "stop" | "done" }) =>
+  stepWizard(state, key, sections, { allowBack: opts?.allowBack ?? false, rightOnLast: opts?.rightOnLast ?? "stop" });
+
+test("left and right change section and keep each section's choices", () => {
+  const start = initialWizardState(wizardPages);
+  const right = move(start, "right");
+  expect(right.done).toBe(false);
+  expect(right.back).toBe(false);
+  expect(right.state.index).toBe(1);
+  expect(right.state.pages[0].selected).toEqual(["claude", "cursor"]);
+  expect(right.state.pages[1].selected).toEqual(["project"]);
+  const back = move(right.state, "left");
+  expect(back.state.index).toBe(0);
+  expect(back.state.pages[0].cursor).toBe(start.pages[0].cursor);
+  expect(back.state.pages[1].cursor).toBe(right.state.pages[1].cursor);
+});
+
+test("left stops on the first section and right stops on the last", () => {
+  const start = initialWizardState(wizardPages);
+  expect(move(start, "left").state.index).toBe(0);
+  expect(move(start, "left").back).toBe(false);
+  const last = move(start, "right").state;
+  const stayed = move(last, "right");
+  expect(stayed.done).toBe(false);
+  expect(stayed.state.index).toBe(1);
+});
+
+test("right on the last section finishes when that section leads onward", () => {
+  const last = move(initialWizardState(wizardPages), "right").state;
+  const done = move(last, "right", { rightOnLast: "done" });
+  expect(done.done).toBe(true);
+  expect(done.state.index).toBe(1);
+  expect(done.state.pages[0].selected).toEqual(["claude", "cursor"]);
+});
+
+test("left on the first section can leave the wizard", () => {
+  const start = initialWizardState(wizardPages);
+  const back = move(start, "left", { allowBack: true });
+  expect(back.back).toBe(true);
+  expect(back.done).toBe(false);
+  expect(back.state.index).toBe(0);
+});
+
+test("right on an empty required section stays and asks for a choice", () => {
+  const start = initialWizardState([
+    { options: agents, initial: [], multiple: true },
+    { options: scope, initial: ["project"], multiple: false },
+  ]);
+  const blocked = move(start, "right");
+  expect(blocked.done).toBe(false);
+  expect(blocked.state.index).toBe(0);
+  expect(blocked.state.pages[0].notice).toBe("Choose at least one.");
+  expect(blocked.state.pages[1].selected).toEqual(["project"]);
+});
+
+test("up and down stay inside the current section", () => {
+  const start = initialWizardState(wizardPages);
+  const up = move(start, "up");
+  expect(up.state.index).toBe(0);
+  expect(up.state.pages[0].cursor).toBe(agents.length - 1);
+  expect(up.state.pages[1]).toEqual(start.pages[1]);
+});
+
+test("enter on submit opens the next section, and enter on the last section finishes", () => {
+  const start = initialWizardState(wizardPages);
+  const next = move(start, "enter", { rightOnLast: "done" });
+  expect(next.done).toBe(false);
+  expect(next.state.index).toBe(1);
+  expect(next.state.pages[0].selected).toEqual(["claude", "cursor"]);
+  const done = move(next.state, "enter", { rightOnLast: "done" });
+  expect(done.done).toBe(true);
+  expect(done.state.pages[1].selected).toEqual(["project"]);
+});
+
+test("a resumed wizard opens on the requested section with earlier choices kept", () => {
+  const state = initialWizardState(wizardPages, 1);
+  expect(state.index).toBe(1);
+  expect(state.pages[0].selected).toEqual(["claude", "cursor"]);
+  expect(state.pages[1].cursor).toBe(scope.length);
+});
+
 test("submit with nothing selected stays put", () => {
   let state = initialPickerState(agents, [], true);
   for (let i = 0; i < agents.length; i++) state = press(state, "down", agents, true, true).state;
@@ -172,6 +266,65 @@ test("the submit and cancel frames are empty", () => {
   const spec = { message: "Which agents do you use?", options: agents, state, multiple: true, step: 0 };
   expect(renderPicker({ ...spec, phase: "submit" })).toBe("");
   expect(renderPicker({ ...spec, phase: "cancel" })).toBe("");
+});
+
+test("right on the last section finishes the prompt when that section leads onward", async () => {
+  const input = new PassThrough();
+  const output = new PassThrough();
+  const answer = wizard(
+    [
+      { message: "Which?", options: agents, initial: ["claude"], multiple: true, required: true, step: 0 },
+      { message: "Where?", options: scope, initial: ["project"], multiple: false, required: false, step: 1 },
+    ],
+    { allowBack: false, rightOnLast: "done", input, output },
+  );
+  input.write("\x1b[C");
+  input.write("\x1b[C");
+  expect(await answer).toEqual({ exit: "done", answers: [["claude"], ["project"]] });
+});
+
+test("left on the first section leaves the prompt when going back is allowed", async () => {
+  const input = new PassThrough();
+  const output = new PassThrough();
+  const answer = wizard(
+    [
+      {
+        message: "Write?",
+        options: [
+          { value: "yes", label: "Yes" },
+          { value: "no", label: "No" },
+        ],
+        initial: ["yes"],
+        multiple: false,
+        step: 3,
+      },
+    ],
+    { allowBack: true, rightOnLast: "stop", input, output },
+  );
+  input.write("\x1b[D");
+  expect(await answer).toEqual({ exit: "back", answers: [["yes"]] });
+});
+
+test("left and right arrow keys move between sections in the prompt", async () => {
+  const input = new PassThrough();
+  const output = new PassThrough();
+  const answer = wizard(
+    [
+      { message: "Which?", options: agents, initial: ["claude"], multiple: true, required: true, step: 0 },
+      { message: "Where?", options: scope, initial: ["project"], multiple: false, required: false, step: 1 },
+    ],
+    { allowBack: false, rightOnLast: "stop", input, output },
+  );
+  input.write("\x1b[C");
+  input.write("\x1b[A");
+  input.write("\r");
+  input.write("\x1b[D");
+  input.write("\x1b[A");
+  input.write("\r");
+  input.write("\x1b[C");
+  input.write("\x1b[B");
+  input.write("\r");
+  expect(await answer).toEqual({ exit: "done", answers: [["claude", "codex"], ["global"]] });
 });
 
 test("pick moves back over the line clack leaves after an empty frame", async () => {
@@ -244,5 +397,32 @@ describe("the current step's bar rises on a terminal", () => {
     expect(text).not.toContain("▁▄▁▁ magnitude");
     input.write("\x1b[B\x1b[B\r");
     expect(await answer).toEqual(["project"]);
+  });
+
+  test("later steps rise on every visit and the first step stays still", async () => {
+    const { input, output, seen } = terminal();
+    const answer = wizard(
+      [
+        { message: "Which?", options: agents, initial: ["claude"], multiple: true, required: true, step: 0, rise: false },
+        { message: "Where?", options: scope, initial: ["project"], multiple: false, required: false, step: 1 },
+      ],
+      { allowBack: false, rightOnLast: "stop", input, output },
+    );
+    await wait(SETTLED);
+    input.write("\x1b[C");
+    await wait(SETTLED);
+    expect(plain(seen.written)).toContain("▁▄▁▁ magnitude");
+    const afterLocation = seen.written.length;
+    input.write("\x1b[D");
+    await wait(SETTLED);
+    const backOnFirst = plain(seen.written.slice(afterLocation));
+    expect(backOnFirst).toContain("▁▁▁▁ magnitude");
+    expect(backOnFirst).not.toContain("▂▁▁▁ magnitude");
+    const afterAgents = seen.written.length;
+    input.write("\x1b[C");
+    await wait(SETTLED);
+    expect(plain(seen.written.slice(afterAgents))).toContain("▁▄▁▁ magnitude");
+    input.write("\r");
+    expect(await answer).toEqual({ exit: "done", answers: [["claude"], ["project"]] });
   });
 });
