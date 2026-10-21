@@ -220,7 +220,8 @@ test("the active frame shows the header, the stepper, the highlight, the marks, 
   expect(lines).toContain("  ■ Cursor        found .cursor/");
   expect(lines).toContain("  □ Codex         found .agents/");
   expect(lines).toContain("▌  Submit ");
-  expect(lines[lines.length - 1]).toContain("Submit continues");
+  expect(lines[lines.length - 1]).toContain("←→");
+  expect(lines[lines.length - 1]).toContain("↑↓");
   const blocked = press({ ...state, cursor: agents.length, selected: [] }, "enter", agents, true, true);
   const error = plainLines(
     renderPicker({ message: "Which agents do you use?", options: agents, state: blocked.state, multiple: true, phase: "active", step: 0, columns: 80 }),
