@@ -112,8 +112,9 @@ export function footerLine(): string {
   return `${section}   ${option}   ${select}`;
 }
 
-/** Same text either way, so the row does not shift when the cursor lands on it. */
-export function submitLabel(focused: boolean): string {
+/** Same text in every state, so the row does not shift when the cursor lands on it or it becomes enabled. */
+export function submitLabel(focused: boolean, enabled = true): string {
+  if (!enabled) return background("key", foreground("gray", " Submit "));
   if (!focused) return keyLabel("Submit");
   return background("brand", foreground("brand", styleText("bold", " Submit ")));
 }

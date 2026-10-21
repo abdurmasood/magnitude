@@ -44,6 +44,7 @@ test("the footer names the section keys, the option keys, and enter", () => {
 test("the Submit label keeps the same text whether focused or not", () => {
   expect(plain(submitLabel(true))).toBe(" Submit ");
   expect(plain(submitLabel(false))).toBe(" Submit ");
+  expect(plain(submitLabel(true, false))).toBe(" Submit ");
 });
 
 test("the cursor bar keeps rows aligned", () => {
@@ -79,7 +80,7 @@ describe("colors follow the terminal's color depth", () => {
 
   test("labels never use inverse or dim", () => {
     setColorDepth(24);
-    for (const label of [keyLabel("enter"), submitLabel(false), submitLabel(true)]) {
+    for (const label of [keyLabel("enter"), submitLabel(false), submitLabel(true), submitLabel(true, false)]) {
       expect(label).not.toContain("\x1b[7m");
       expect(label).not.toContain("\x1b[2m");
     }

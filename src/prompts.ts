@@ -36,6 +36,7 @@ export async function askAnswers(
       initial,
       multiple: true,
       required: true,
+      requiredHint: "select an agent to continue",
       step: 0,
       rise: false,
       body: defaults.agents.length > 0 ? [styleText("dim", `Found ${defaults.agents.length}.`)] : undefined,
@@ -60,6 +61,7 @@ export async function askAnswers(
       initial: chosen?.skills ?? defaults.skills,
       multiple: true,
       required: true,
+      requiredHint: "select a skill to continue",
       step: 2,
     });
   }
