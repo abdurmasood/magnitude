@@ -1,7 +1,7 @@
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, relative, sep } from "node:path";
 import { styleText } from "node:util";
-import { DOCS_URL, foreground, STEPS, stepperLine } from "./theme.js";
+import { DOCS_URL, foreground, headerLine, STEPS, stepperLine } from "./theme.js";
 import type { AgentId, FinalWrite, Plan, Roots, SkillRemoval } from "./types.js";
 
 export const AGENT_NAMES: Record<AgentId, string> = { claude: "Claude Code", cursor: "Cursor", codex: "Codex" };
@@ -110,5 +110,5 @@ export function finishedLines(fileCount: number, agents: AgentId[], skills: stri
     return `${lead}${foreground("magenta", styleText("bold", step.command))}${styleText("dim", `  in ${agentNames(step.agents)}`)}`;
   });
   const wrote = styleText("bold", `Wrote ${plural(fileCount, "file")}.`);
-  return [stepperLine(STEPS.length), "", wrote, "", ...next, `${styleText("dim", "Docs  ")}${styleText("dim", DOCS_URL)}`];
+  return [headerLine(), "", stepperLine(STEPS.length), "", wrote, "", ...next, `${styleText("dim", "Docs  ")}${styleText("dim", DOCS_URL)}`];
 }

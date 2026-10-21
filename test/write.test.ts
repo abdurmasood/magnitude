@@ -83,6 +83,8 @@ describe("nextSteps", () => {
 describe("finishedLines", () => {
   test("shows every step done, the file count, the next commands and the docs", () => {
     expect(finishedLines(12, ["claude", "cursor", "codex"], ["calibrate"]).map((line) => plain(line))).toEqual([
+      "▁▃▅▇ magnitude   skills for Claude Code, Cursor and Codex",
+      "",
       "✓ agents ── ✓ location ── ✓ skills ── ✓ review",
       "",
       "Wrote 12 files.",
@@ -94,8 +96,8 @@ describe("finishedLines", () => {
   });
   test("spells one file and leads with Codex when it is the only agent", () => {
     const lines = finishedLines(1, ["codex"], ["open-pr"]).map((line) => plain(line));
-    expect(lines[2]).toBe("Wrote 1 file.");
-    expect(lines.slice(4)).toEqual(["Next  $open-pr  in Codex", "Docs  github.com/abdurmasood/magnitude"]);
+    expect(lines[4]).toBe("Wrote 1 file.");
+    expect(lines.slice(6)).toEqual(["Next  $open-pr  in Codex", "Docs  github.com/abdurmasood/magnitude"]);
   });
 });
 

@@ -8,7 +8,6 @@ import { firstClaudeInstruction, loadLegacySkill, loadPrinciplesBody, principleD
 import { askAnswers, askConfirm, askDecisions, type Conflict } from "./prompts.js";
 import { isMissing, loadSkills, readFilesRecursive } from "./skills.js";
 import type { AgentId, Answers, Decision, DuplicateWarning, FileMap, Plan, Roots, Scan, Skill, SkillWrite } from "./types.js";
-import { headerLine } from "./theme.js";
 import { AGENT_NAMES, applyFileWrites, applyRemovals, applyWrites, displayPath, finishedLines, nextStepLines, reviewEntries, reviewLines } from "./write.js";
 
 export interface InitOptions {
@@ -75,7 +74,6 @@ async function run(opts: InitOptions): Promise<number> {
     return 1;
   }
   const roots: Roots = { project: findProjectRoot(opts.cwd), home: opts.home };
-  if (opts.interactive && !flags.yes) printAll(opts.log, [headerLine(), ""]);
   const answers = await chooseAnswers(flags, detectAgents(roots.project), skills);
   const plan = buildPlan(answers, skills, roots, scanFor(answers, roots), principlesFor(answers, roots));
   for (const warning of plan.warnings) opts.log(warningLine(warning, roots));
