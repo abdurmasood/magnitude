@@ -118,10 +118,11 @@ test("answering keep logs the kept skill and writes the rest", async () => {
   expect(existsSync(join(cwd, ".claude/skills/manual-skill/SKILL.md"))).toBe(true);
 });
 
-test("an interactive run opens with the header and ends with the finished screen", async () => {
+test("an interactive run ends with the finished screen under the full header", async () => {
   expect(await runInit(base)).toBe(0);
-  expect(lines.slice(0, 2)).toEqual(["▁▃▅▇ magnitude   skills for Claude Code, Cursor and Codex", ""]);
-  expect(lines.slice(-6)).toEqual([
+  expect(lines.slice(-8)).toEqual([
+    "▁▃▅▇ magnitude   skills for Claude Code, Cursor and Codex",
+    "",
     "✓ agents ── ✓ location ── ✓ skills ── ✓ review",
     "",
     "Wrote 4 files.",

@@ -1,3 +1,4 @@
+import type { Writable } from "node:stream";
 import { styleText } from "node:util";
 
 // Styles are nested calls, not arrays: array formats need a newer Node than package.json's engine.
@@ -64,8 +65,30 @@ export type Step = number;
 
 export const DOCS_URL = "github.com/abdurmasood/magnitude";
 
-export function headerLine(): string {
-  return `${foreground("magenta", "▁▃▅▇")}${styleText("bold", " magnitude")}${styleText("dim", "   skills for Claude Code, Cursor and Codex")}`;
+/** One bar per step; together they draw ▁▃▅▇. */
+const BAR_HEIGHTS = [1, 3, 5, 7];
+const LEVELS = " ▁▂▃▄▅▆▇█";
+export const RISE_FRAME_MS = 35;
+
+/** Bars up to `step` are lit; the bar at `step` is drawn at `riseHeight` while it rises. No step lights them all. */
+export function headerLine(step: Step = STEPS.length, riseHeight?: number): string {
+  const bars = BAR_HEIGHTS.map((height, index) => {
+    if (index > step) return foreground("gray", LEVELS[1]);
+    return foreground("magenta", LEVELS[index === step ? (riseHeight ?? height) : height]);
+  }).join("");
+  return `${bars}${styleText("bold", " magnitude")}${styleText("dim", "   skills for Claude Code, Cursor and Codex")}`;
+}
+
+/** Heights for the bar at `step` as it rises: four even steps to one notch past its height, then back to it. */
+export function riseFrames(step: Step): number[] {
+  const height = BAR_HEIGHTS[step];
+  const frames = [1, 2, 3, 4].map((frame) => Math.max(1, Math.round(((height + 1) * frame) / 4)));
+  return [...frames, height];
+}
+
+/** Motion only on a real terminal with 256+ colors, and never in CI logs. */
+export function canAnimate(output: Writable): boolean {
+  return (output as { isTTY?: boolean }).isTTY === true && colorDepth() >= 8 && process.env.CI === undefined;
 }
 
 function stepMark(name: string, index: number, current: Step): string {

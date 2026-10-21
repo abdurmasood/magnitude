@@ -78,7 +78,7 @@ export interface Conflict {
 
 export async function askDecisions(conflicts: Conflict[]): Promise<Record<string, Decision> | null> {
   const decisions: Record<string, Decision> = {};
-  for (const conflict of conflicts) {
+  for (const [index, conflict] of conflicts.entries()) {
     const answer = await pick<Decision>({
       message: conflict.instruction
         ? `Coding principles in ${conflict.label} differ. Replace them?`
@@ -90,6 +90,7 @@ export async function askDecisions(conflicts: Conflict[]): Promise<Record<string
       initial: ["keep"],
       multiple: false,
       step: 3,
+      rise: index === 0,
     });
     if (answer === null) return null;
     decisions[conflict.dest] = answer[0];
@@ -103,7 +104,8 @@ function entryLines(entries: ReviewEntry[]): string[] {
   return ["", ...entries.map((entry) => `  ${entry.path.padEnd(width)}${styleText("dim", entry.detail)}`)];
 }
 
-export async function askConfirm(entries: ReviewEntry[], fileCount: number): Promise<boolean | null> {
+/** `rise` is false when conflict questions already showed step 3. */
+export async function askConfirm(entries: ReviewEntry[], fileCount: number, rise: boolean): Promise<boolean | null> {
   const answer = await pick({
     message: `Write ${plural(fileCount, "file")}?`,
     body: entryLines(entries),
@@ -114,6 +116,7 @@ export async function askConfirm(entries: ReviewEntry[], fileCount: number): Pro
     initial: [true],
     multiple: false,
     step: 3,
+    rise,
   });
   if (answer === null) return null;
   return answer[0];

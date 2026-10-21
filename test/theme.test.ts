@@ -1,12 +1,15 @@
+import { PassThrough } from "node:stream";
 import { stripVTControlCharacters as plain } from "node:util";
-import { afterEach, describe, expect, test } from "vitest";
+import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import {
   background,
+  canAnimate,
   cursorBar,
   footerLine,
   foreground,
   headerLine,
   keyLabel,
+  riseFrames,
   setColorDepth,
   STEPS,
   stepperLine,
@@ -77,5 +80,51 @@ describe("colors follow the terminal's color depth", () => {
       expect(label).not.toContain("\x1b[7m");
       expect(label).not.toContain("\x1b[2m");
     }
+  });
+});
+
+test("the header lights one bar per step reached and leaves later bars flat", () => {
+  expect(plain(headerLine(0))).toBe("▁▁▁▁ magnitude   skills for Claude Code, Cursor and Codex");
+  expect(plain(headerLine(2)).slice(0, 4)).toBe("▁▃▅▁");
+  expect(plain(headerLine(2, 2)).slice(0, 4)).toBe("▁▃▂▁");
+});
+
+test("unlit bars are gray and lit bars are the brand purple", () => {
+  setColorDepth(24);
+  const header = headerLine(1);
+  expect(header).toContain("\x1b[38;2;214;144;227m▃\x1b[39m");
+  expect(header).toContain("\x1b[38;2;85;91;97m▁\x1b[39m");
+});
+
+test("a rising bar overshoots by one notch and settles on its height", () => {
+  expect(riseFrames(1)).toEqual([1, 2, 3, 4, 3]);
+  expect(STEPS.map((_, step) => riseFrames(step).at(-1))).toEqual([1, 3, 5, 7]);
+});
+
+describe("canAnimate", () => {
+  const tty = Object.assign(new PassThrough(), { isTTY: true });
+  const saved = process.env.CI;
+  beforeEach(() => delete process.env.CI);
+  afterEach(() => {
+    if (saved === undefined) delete process.env.CI;
+    else process.env.CI = saved;
+  });
+
+  test("animates on a terminal with 256 colors or more", () => {
+    setColorDepth(8);
+    expect(canAnimate(tty)).toBe(true);
+  });
+  test("stays still when output is not a terminal", () => {
+    setColorDepth(24);
+    expect(canAnimate(new PassThrough())).toBe(false);
+  });
+  test("stays still with 16 colors", () => {
+    setColorDepth(4);
+    expect(canAnimate(tty)).toBe(false);
+  });
+  test("stays still in CI", () => {
+    setColorDepth(24);
+    process.env.CI = "true";
+    expect(canAnimate(tty)).toBe(false);
   });
 });

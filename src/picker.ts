@@ -3,7 +3,18 @@ import type { Key } from "node:readline";
 import type { Readable, Writable } from "node:stream";
 import { styleText } from "node:util";
 import { getColumns, isCancel, Prompt } from "@clack/core";
-import { cursorBar, footerLine, foreground, type Step, stepperLine, submitLabel } from "./theme.js";
+import {
+  canAnimate,
+  cursorBar,
+  footerLine,
+  foreground,
+  headerLine,
+  RISE_FRAME_MS,
+  riseFrames,
+  type Step,
+  stepperLine,
+  submitLabel,
+} from "./theme.js";
 
 export interface PickerOption<T> {
   value: T;
@@ -98,6 +109,8 @@ export interface RenderInput<T> {
   /** Lines under the message, already styled. */
   body?: string[];
   columns?: number;
+  /** Height of the current step's bar while it rises; undefined once it has settled. */
+  riseHeight?: number;
 }
 
 function optionLines<T>(input: RenderInput<T>): string[] {
@@ -116,7 +129,7 @@ function optionLines<T>(input: RenderInput<T>): string[] {
 export function renderPicker<T>(input: RenderInput<T>): string {
   if (input.phase !== "active") return "";
   const onSubmit = input.state.cursor === input.options.length;
-  const lines = [stepperLine(input.step), "", styleText("bold", input.message), ...(input.body ?? []), ""];
+  const lines = [headerLine(input.step, input.riseHeight), "", stepperLine(input.step), "", styleText("bold", input.message), ...(input.body ?? []), ""];
   lines.push(...optionLines(input), "", `${cursorBar(onSubmit)}${submitLabel(onSubmit)}`);
   if (input.state.notice !== "") lines.push(foreground("yellow", `  ${input.state.notice}`));
   lines.push("", footerLine());
@@ -125,6 +138,7 @@ export function renderPicker<T>(input: RenderInput<T>): string {
 
 interface Held<T> {
   state: PickerState<T>;
+  riseHeight?: number;
 }
 
 interface PickOptions<T> {
@@ -135,6 +149,8 @@ interface PickOptions<T> {
   step: Step;
   body?: string[];
   required?: boolean;
+  /** Animate the current step's bar rising. Off for repeat questions on the same step. Defaults to true. */
+  rise?: boolean;
   input?: Readable;
   output?: Writable;
 }
@@ -142,6 +158,9 @@ interface PickOptions<T> {
 class ListPrompt<T> extends Prompt<T[]> {
   private cursor: number;
   private readonly submitAt: number;
+  private readonly spec: PickOptions<T>;
+  private readonly held: Held<T>;
+  private riseTimer: NodeJS.Timeout | undefined;
 
   constructor(spec: PickOptions<T>, held: Held<T>, required: boolean) {
     super(
@@ -163,6 +182,7 @@ class ListPrompt<T> extends Prompt<T[]> {
             step: spec.step,
             body: spec.body,
             columns: getColumns(spec.output ?? stdout),
+            riseHeight: held.riseHeight,
           });
         },
       },
@@ -170,6 +190,8 @@ class ListPrompt<T> extends Prompt<T[]> {
     );
     this.submitAt = spec.options.length;
     this.cursor = held.state.cursor;
+    this.spec = spec;
+    this.held = held;
     // Clack submits on Return after this listener. Only the Submit row may submit.
     this.on("key", (_char, key) => {
       const mapped = toKey(key);
@@ -183,6 +205,37 @@ class ListPrompt<T> extends Prompt<T[]> {
 
   protected _shouldSubmit(_char: string | undefined, _key: Key): boolean {
     return this.cursor === this.submitAt;
+  }
+
+  prompt(): ReturnType<Prompt<T[]>["prompt"]> {
+    if (this.spec.rise !== false && canAnimate(this.spec.output ?? stdout)) this.startRise();
+    return super.prompt();
+  }
+
+  private startRise(): void {
+    const frames = riseFrames(this.spec.step);
+    let next = 1;
+    this.held.riseHeight = frames[0];
+    this.riseTimer = setInterval(() => {
+      this.held.riseHeight = next < frames.length - 1 ? frames[next] : undefined;
+      next += 1;
+      if (this.held.riseHeight === undefined) this.stopRise();
+      // @clack/core 1.5.1 types render() as private but binds it in its constructor, and has no public
+      // way to redraw off a keypress. The real-stream tests in picker.test.ts catch it if that changes.
+      (this as unknown as { render(): void }).render();
+    }, RISE_FRAME_MS);
+  }
+
+  private stopRise(): void {
+    clearInterval(this.riseTimer);
+    this.riseTimer = undefined;
+  }
+
+  // Every way a prompt ends goes through close(). Late ticks only redraw the empty final frame, which clack
+  // skips, but the timer would still hold the process open until the rise finished.
+  protected close(): void {
+    this.stopRise();
+    super.close();
   }
 }
 
