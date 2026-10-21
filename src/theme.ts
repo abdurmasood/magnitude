@@ -106,9 +106,10 @@ export function keyLabel(key: string): string {
 }
 
 export function footerLine(): string {
-  const move = `${keyLabel("↑↓")}${styleText("dim", " move")}`;
+  const section = `${keyLabel("←→")}${styleText("dim", " section")}`;
+  const option = `${keyLabel("↑↓")}${styleText("dim", " option")}`;
   const select = `${keyLabel("enter")}${styleText("dim", " select")}`;
-  return `${move}   ${select}${styleText("dim", "   Submit continues")}`;
+  return `${section}   ${option}   ${select}`;
 }
 
 /** Same text either way, so the row does not shift when the cursor lands on it. */

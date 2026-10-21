@@ -31,11 +31,14 @@ test("a step past the last marks every step done", () => {
   expect(plain(stepperLine(STEPS.length))).toBe("✓ agents ── ✓ location ── ✓ skills ── ✓ review");
 });
 
-test("the footer names the keys and says Submit continues", () => {
+test("the footer names the section keys, the option keys, and enter", () => {
   const footer = plain(footerLine());
+  expect(footer).toContain("←→");
+  expect(footer).toContain("section");
   expect(footer).toContain("↑↓");
+  expect(footer).toContain("option");
   expect(footer).toContain("enter");
-  expect(footer).toContain("Submit continues");
+  expect(footer).toContain("select");
 });
 
 test("the Submit label keeps the same text whether focused or not", () => {

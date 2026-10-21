@@ -132,6 +132,41 @@ test("an interactive run ends with the finished screen under the full header", a
   ]);
 });
 
+test("going back from confirm asks the answers again and does not repeat a warning", async () => {
+  mkdirSync(join(cwd, ".agents/skills/auto-skill"), { recursive: true });
+  writeFileSync(join(cwd, ".agents/skills/auto-skill/SKILL.md"), "other");
+  const answers = { agents: ["claude", "cursor"] as ["claude", "cursor"], scope: "project" as const, skills: ["auto-skill", "manual-skill"] };
+  vi.mocked(askAnswers).mockResolvedValue(answers);
+  vi.mocked(askConfirm).mockResolvedValueOnce("back").mockResolvedValueOnce(true);
+  expect(await runInit(base)).toBe(0);
+  expect(vi.mocked(askAnswers)).toHaveBeenCalledTimes(2);
+  expect(vi.mocked(askAnswers).mock.calls[1][4]).toEqual({ resume: answers });
+  expect(vi.mocked(askConfirm)).toHaveBeenCalledTimes(2);
+  expect(lines.filter((line) => line.includes("will also load"))).toEqual(["Cursor will also load .agents/skills/auto-skill"]);
+  expect(existsSync(join(cwd, ".claude/skills/manual-skill/SKILL.md"))).toBe(true);
+});
+
+test("going back from the first conflict asks the answers again", async () => {
+  ownSkill();
+  const dest = join(cwd, ".claude/skills/auto-skill");
+  vi.mocked(askDecisions).mockResolvedValueOnce("back").mockResolvedValueOnce({ [dest]: "keep" });
+  expect(await runInit(base)).toBe(0);
+  expect(vi.mocked(askAnswers)).toHaveBeenCalledTimes(2);
+  expect(vi.mocked(askConfirm)).toHaveBeenCalledTimes(1);
+  expect(readFileSync(join(dest, "SKILL.md"), "utf8")).toBe("mine");
+});
+
+test("going back from confirm returns to the last conflict", async () => {
+  ownSkill();
+  const dest = join(cwd, ".claude/skills/auto-skill");
+  vi.mocked(askDecisions).mockResolvedValueOnce({ [dest]: "keep" }).mockResolvedValueOnce({ [dest]: "replace" });
+  vi.mocked(askConfirm).mockResolvedValueOnce("back").mockResolvedValueOnce(true);
+  expect(await runInit(base)).toBe(0);
+  expect(vi.mocked(askAnswers)).toHaveBeenCalledTimes(1);
+  expect(vi.mocked(askDecisions).mock.calls[1][1]).toMatchObject({ startIndex: 0, animate: false, initial: { [dest]: "keep" } });
+  expect(readFileSync(join(dest, "SKILL.md"), "utf8")).toContain("name: auto-skill");
+});
+
 test("an interactive run shows the review inside the confirm question instead of logging it", async () => {
   expect(await runInit(base)).toBe(0);
   const [entries, fileCount] = vi.mocked(askConfirm).mock.calls[0];

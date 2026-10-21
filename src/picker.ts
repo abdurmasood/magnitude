@@ -53,7 +53,73 @@ export function initialPickerState<T>(
   initial: readonly T[],
   multiple: boolean,
 ): PickerState<T> {
-  return { cursor: 0, selected: seed(options, initial, multiple), notice: "" };
+  const selected = seed(options, initial, multiple);
+  // A chosen answer starts on Submit, so Enter confirms it. An empty list starts on the first row.
+  const cursor = selected.length > 0 ? options.length : 0;
+  return { cursor, selected, notice: "" };
+}
+
+export interface WizardState<T> {
+  index: number;
+  pages: PickerState<T>[];
+}
+
+export interface WizardStep<T> {
+  state: WizardState<T>;
+  done: boolean;
+  back: boolean;
+}
+
+export interface WizardRules<T> {
+  options: PickerOption<T>[];
+  multiple: boolean;
+  required: boolean;
+}
+
+interface WizardSeed<T> {
+  options: PickerOption<T>[];
+  initial: readonly T[];
+  multiple: boolean;
+}
+
+export function initialWizardState<T>(pages: WizardSeed<T>[], startIndex = 0): WizardState<T> {
+  const last = Math.max(0, pages.length - 1);
+  return {
+    index: Math.min(Math.max(0, startIndex), last),
+    pages: pages.map((page) => initialPickerState(page.options, page.initial, page.multiple)),
+  };
+}
+
+function writePage<T>(state: WizardState<T>, page: PickerState<T>): WizardState<T> {
+  const pages = state.pages.map((item, index) => (index === state.index ? page : item));
+  return { ...state, pages };
+}
+
+/** Left and right change page. Up, down, and enter stay on the current page until Submit moves on. */
+export function stepWizard<T>(
+  state: WizardState<T>,
+  key: PickerKey | "left" | "right",
+  pages: WizardRules<T>[],
+  opts: { allowBack: boolean; rightOnLast: "stop" | "done" },
+): WizardStep<T> {
+  const stay = (next: WizardState<T>): WizardStep<T> => ({ state: next, done: false, back: false });
+  const page = pages[state.index];
+  const current = state.pages[state.index];
+  if (key === "left") {
+    if (state.index === 0) return opts.allowBack ? { state, done: false, back: true } : stay(state);
+    return stay({ ...writePage(state, { ...current, notice: "" }), index: state.index - 1 });
+  }
+  if (key === "right") {
+    if (page.required && current.selected.length === 0) return stay(writePage(state, { ...current, notice: REQUIRED }));
+    const cleared = writePage(state, { ...current, notice: "" });
+    if (state.index === pages.length - 1) return opts.rightOnLast === "done" ? { state: cleared, done: true, back: false } : stay(cleared);
+    return stay({ ...cleared, index: state.index + 1 });
+  }
+  const stepped = stepPicker(current, key, page.options, page.multiple, page.required);
+  if (!stepped.done) return stay(writePage(state, stepped.state));
+  const cleared = writePage(state, stepped.state);
+  if (state.index === pages.length - 1) return { state: cleared, done: true, back: false };
+  return stay({ ...cleared, index: state.index + 1 });
 }
 
 /** Arrow keys move. Enter toggles. Enter on the Submit row finishes, unless a required list is empty. */
@@ -245,9 +311,168 @@ function toKey(key: Key): PickerKey | null {
   return null;
 }
 
+function toWizardKey(key: Key): PickerKey | "left" | "right" | null {
+  if (key.name === "left" || key.name === "right") return key.name;
+  return toKey(key);
+}
+
 // Clack's close() always writes a newline after the last frame. The last frame is empty, so step back
 // up onto the row it left blank; the next output starts where the question was.
 const LINE_UP = "\x1b[1A";
+
+export interface WizardPage<T> {
+  message: string;
+  options: PickerOption<T>[];
+  initial: readonly T[];
+  multiple: boolean;
+  required?: boolean;
+  step: Step;
+  body?: string[];
+  /** When false, this page does not play the rise even if its step has not been shown. */
+  rise?: boolean;
+}
+
+export interface WizardRunOptions {
+  allowBack?: boolean;
+  /** Right on the last page finishes the wizard. Otherwise it stays there. */
+  rightOnLast?: "stop" | "done";
+  startIndex?: number;
+  /** Play the bar rise when a page is shown. Off for a page that opts out with `rise: false`. */
+  animate?: boolean;
+  input?: Readable;
+  output?: Writable;
+}
+
+export interface WizardResult<T> {
+  exit: "done" | "back";
+  answers: T[][];
+}
+
+interface WizardHeld<T> extends WizardState<T> {
+  riseHeight?: number;
+}
+
+class WizardPrompt<T> extends Prompt<T[][]> {
+  backed = false;
+  private finished = false;
+  private readonly pages: WizardPage<T>[];
+  private readonly held: WizardHeld<T>;
+  private readonly run: { allowBack: boolean; rightOnLast: "stop" | "done"; animate: boolean; output?: Writable };
+  private riseTimer: NodeJS.Timeout | undefined;
+  private shown = -1;
+
+  constructor(pages: WizardPage<T>[], opts: WizardRunOptions) {
+    const held: WizardHeld<T> = { ...initialWizardState(pages, opts.startIndex ?? 0) };
+    const output = opts.output;
+    super(
+      {
+        input: opts.input,
+        output,
+        render() {
+          const page = pages[held.index];
+          const phase = this.state === "submit" ? "submit" : this.state === "cancel" ? "cancel" : "active";
+          const current = held.pages[held.index];
+          const notice = this.state === "error" && this.error !== "" ? this.error : current.notice;
+          return renderPicker({
+            message: page.message,
+            options: page.options,
+            state: { ...current, notice },
+            multiple: page.multiple,
+            phase,
+            step: page.step,
+            body: page.body,
+            columns: getColumns(output ?? stdout),
+            riseHeight: held.riseHeight,
+          });
+        },
+      },
+      false,
+    );
+    this.pages = pages;
+    this.held = held;
+    this.run = {
+      allowBack: opts.allowBack === true,
+      rightOnLast: opts.rightOnLast ?? "stop",
+      animate: opts.animate !== false,
+      output,
+    };
+    this.on("key", (_char, key) => {
+      const mapped = toWizardKey(key);
+      if (mapped === null) return;
+      const next = stepWizard(
+        this.held,
+        mapped,
+        pages.map((page) => ({ options: page.options, multiple: page.multiple, required: page.required === true })),
+        { allowBack: this.run.allowBack, rightOnLast: this.run.rightOnLast },
+      );
+      this.held.index = next.state.index;
+      this.held.pages = next.state.pages;
+      this.syncRise();
+      if (!next.back && !next.done) return;
+      this.value = this.held.pages.map((page) => [...page.selected]);
+      this.backed = next.back;
+      this.finished = next.done;
+      // Return submits through _shouldSubmit. Any other key has to close the prompt itself.
+      if (mapped !== "enter") this.state = "submit";
+    });
+  }
+
+  protected _shouldSubmit(): boolean {
+    return this.finished;
+  }
+
+  prompt(): ReturnType<Prompt<T[][]>["prompt"]> {
+    this.syncRise();
+    return super.prompt();
+  }
+
+  private syncRise(): void {
+    if (this.shown === this.held.index) return;
+    this.shown = this.held.index;
+    const page = this.pages[this.held.index];
+    const output = this.run.output ?? stdout;
+    const play = this.run.animate && page.rise !== false && canAnimate(output);
+    this.stopRise();
+    if (!play) {
+      this.held.riseHeight = undefined;
+      return;
+    }
+    this.startRise(page.step);
+  }
+
+  private startRise(step: Step): void {
+    const frames = riseFrames(step);
+    let next = 1;
+    this.held.riseHeight = frames[0];
+    this.riseTimer = setInterval(() => {
+      this.held.riseHeight = next < frames.length - 1 ? frames[next] : undefined;
+      next += 1;
+      if (this.held.riseHeight === undefined) this.stopRise();
+      // @clack/core 1.5.1 types render() as private but binds it in its constructor, and has no public
+      // way to redraw off a keypress. The real-stream tests in picker.test.ts catch it if that changes.
+      (this as unknown as { render(): void }).render();
+    }, RISE_FRAME_MS);
+  }
+
+  private stopRise(): void {
+    clearInterval(this.riseTimer);
+    this.riseTimer = undefined;
+  }
+
+  protected close(): void {
+    this.stopRise();
+    super.close();
+  }
+}
+
+/** Ctrl-C resolves to null. Left from the first page resolves to `{ exit: "back" }` when `allowBack` is set. */
+export async function wizard<T>(pages: WizardPage<T>[], opts: WizardRunOptions = {}): Promise<WizardResult<T> | null> {
+  const prompt = new WizardPrompt(pages, opts);
+  const result = await prompt.prompt();
+  (opts.output ?? stdout).write(LINE_UP);
+  if (isCancel(result) || result === undefined) return null;
+  return { exit: prompt.backed ? "back" : "done", answers: result };
+}
 
 /** Ctrl-C resolves to null. */
 export async function pick<T>(spec: PickOptions<T>): Promise<T[] | null> {

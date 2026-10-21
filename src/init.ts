@@ -74,20 +74,33 @@ async function run(opts: InitOptions): Promise<number> {
     return 1;
   }
   const roots: Roots = { project: findProjectRoot(opts.cwd), home: opts.home };
-  const answers = await chooseAnswers(flags, detectAgents(roots.project), skills);
-  const plan = buildPlan(answers, skills, roots, scanFor(answers, roots), principlesFor(answers, roots));
-  for (const warning of plan.warnings) opts.log(warningLine(warning, roots));
-  return install({ log: opts.log, flags, roots }, answers, plan);
+  const seen = new Set<string>();
+  const logOnce = (line: string) => {
+    if (seen.has(line)) return;
+    seen.add(line);
+    opts.log(line);
+  };
+  const detected = detectAgents(roots.project);
+  let answers = await chooseAnswers(flags, detected, skills);
+  for (;;) {
+    const plan = buildPlan(answers, skills, roots, scanFor(answers, roots), principlesFor(answers, roots));
+    for (const warning of plan.warnings) logOnce(warningLine(warning, roots));
+    const outcome = await install({ log: opts.log, logOnce, flags, roots }, answers, plan);
+    if (outcome !== "back") return outcome;
+    answers = await chooseAnswers(flags, detected, skills, answers);
+  }
 }
 
 interface RunContext {
   log: InitOptions["log"];
+  /** Warnings and notes. The same line is not printed again when review goes back. */
+  logOnce: (line: string) => void;
   flags: Flags;
   roots: Roots;
 }
 
-async function install({ log, flags, roots }: RunContext, answers: Answers, plan: Plan): Promise<number> {
-  for (const note of plan.notes) log(note);
+async function install({ log, logOnce, flags, roots }: RunContext, answers: Answers, plan: Plan): Promise<number | "back"> {
+  for (const note of plan.notes) logOnce(note);
   const label = (dest: string) => displayPath(dest, roots);
   const conflicts: Conflict[] = [
     ...plan.writes.filter((write) => write.status === "conflict").map((write) => ({ dest: write.dest, label: label(write.dest) })),
@@ -95,26 +108,51 @@ async function install({ log, flags, roots }: RunContext, answers: Answers, plan
       .filter((write) => write.status === "conflict")
       .map((write) => ({ dest: write.dest, label: label(write.dest), instruction: true })),
   ];
-  const decisions = await chooseDecisions(flags, conflicts);
-  for (const write of plan.writes) {
-    if (write.status === "conflict" && decisions[write.dest] !== "replace") log(keptLine(write, roots));
+  const interactive = asksDecisions(flags, conflicts);
+  let startIndex = 0;
+  let initial: Record<string, Decision> | undefined;
+  let animate = true;
+  for (;;) {
+    const decisions = await chooseDecisions(flags, conflicts, { startIndex, initial, animate });
+    if (decisions === "back") return "back";
+    const writes = resolveWrites(plan, decisions);
+    const files = resolveInstructions(plan, decisions);
+    const reportKept = () => {
+      for (const write of plan.writes) {
+        if (write.status === "conflict" && decisions[write.dest] !== "replace") log(keptLine(write, roots));
+      }
+      for (const write of plan.instructions) {
+        if (write.status === "conflict" && decisions[write.dest] !== "replace") log(instructionKeptLine(write.dest, roots));
+      }
+    };
+    if (writes.length === 0 && files.length === 0 && plan.removals.length === 0) {
+      reportKept();
+      return printAll(log, [nothingToWrite(conflicts, decisions)]);
+    }
+    const review = reviewEntries(plan, writes, roots, files, plan.removals);
+    if (flags.yes) {
+      reportKept();
+      printAll(log, reviewLines(plan, writes, roots, files, plan.removals));
+    } else {
+      const confirmed = await askConfirm(review.entries, review.fileCount, !interactive, interactive || hasOpenAnswer(flags));
+      if (confirmed === "back") {
+        if (interactive) {
+          startIndex = conflicts.length - 1;
+          initial = decisions;
+          animate = false;
+          continue;
+        }
+        return "back";
+      }
+      if (confirmed === null || confirmed === false) throw new Cancelled();
+      reportKept();
+    }
+    applyWrites(writes);
+    applyFileWrites(files);
+    applyRemovals(plan.removals.map((removal) => removal.dest));
+    if (flags.yes) return printAll(log, nextStepLines(answers.agents, answers.skills));
+    return printAll(log, finishedLines(review.fileCount, answers.agents, answers.skills));
   }
-  for (const write of plan.instructions) {
-    if (write.status === "conflict" && decisions[write.dest] !== "replace") log(instructionKeptLine(write.dest, roots));
-  }
-  const writes = resolveWrites(plan, decisions);
-  const files = resolveInstructions(plan, decisions);
-  if (writes.length === 0 && files.length === 0 && plan.removals.length === 0) {
-    return printAll(log, [nothingToWrite(conflicts, decisions)]);
-  }
-  const review = reviewEntries(plan, writes, roots, files, plan.removals);
-  if (flags.yes) printAll(log, reviewLines(plan, writes, roots, files, plan.removals));
-  else if (!unlessCancelled(await askConfirm(review.entries, review.fileCount, !asksDecisions(flags, conflicts)))) throw new Cancelled();
-  applyWrites(writes);
-  applyFileWrites(files);
-  applyRemovals(plan.removals.map((removal) => removal.dest));
-  if (flags.yes) return printAll(log, nextStepLines(answers.agents, answers.skills));
-  return printAll(log, finishedLines(review.fileCount, answers.agents, answers.skills));
 }
 
 function printAll(log: InitOptions["log"], lines: string[]): number {
@@ -128,7 +166,7 @@ function readVersion(): string {
   return (JSON.parse(readFileSync(path, "utf8")) as { version: string }).version;
 }
 
-async function chooseAnswers(flags: Flags, detected: Detection, skills: Skill[]): Promise<Answers> {
+async function chooseAnswers(flags: Flags, detected: Detection, skills: Skill[], previous?: Answers): Promise<Answers> {
   const names = skills.map((skill) => skill.name);
   if (flags.yes) return resolveNonInteractive(flags, detected.agents, names);
   const preset: Partial<Answers> = {};
@@ -136,7 +174,7 @@ async function chooseAnswers(flags: Flags, detected: Detection, skills: Skill[])
   if (flags.skills) preset.skills = flags.skills === "all" ? names : flags.skills;
   if (flags.global) preset.scope = "global";
   const defaults: Answers = { agents: detected.agents, scope: "project", skills: names };
-  return unlessCancelled(await askAnswers(defaults, preset, skills, detected.hints));
+  return unlessCancelled(await askAnswers(defaults, preset, skills, detected.hints, previous === undefined ? undefined : { resume: previous }));
 }
 
 /**
@@ -206,8 +244,26 @@ function asksDecisions(flags: Flags, conflicts: Conflict[]): boolean {
   return conflicts.length > 0 && !flags.replace && !flags.keepExisting && !flags.yes;
 }
 
-async function chooseDecisions(flags: Flags, conflicts: Conflict[]): Promise<Record<string, Decision>> {
-  if (asksDecisions(flags, conflicts)) return unlessCancelled(await askDecisions(conflicts));
+/** An answer section is still on screen, so Left from review can return to it. */
+function hasOpenAnswer(flags: Flags): boolean {
+  return flags.agents === undefined || flags.skills === undefined || !flags.global;
+}
+
+async function chooseDecisions(
+  flags: Flags,
+  conflicts: Conflict[],
+  opts?: { startIndex?: number; initial?: Record<string, Decision>; animate?: boolean },
+): Promise<Record<string, Decision> | "back"> {
+  if (asksDecisions(flags, conflicts)) {
+    const asked = await askDecisions(conflicts, {
+      startIndex: opts?.startIndex ?? 0,
+      initial: opts?.initial,
+      allowBack: hasOpenAnswer(flags),
+      animate: opts?.animate !== false,
+    });
+    if (asked === "back") return "back";
+    return unlessCancelled(asked);
+  }
   const decision: Decision = flags.replace ? "replace" : "keep";
   return Object.fromEntries(conflicts.map((write) => [write.dest, decision]));
 }
