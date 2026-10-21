@@ -1,8 +1,22 @@
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, relative, sep } from "node:path";
-import type { AgentId, FinalWrite, Plan, Roots } from "./types.js";
+import { styleText } from "node:util";
+import { DOCS_URL, foreground, STEPS, stepperLine } from "./theme.js";
+import type { AgentId, FinalWrite, Plan, Roots, SkillRemoval } from "./types.js";
 
 export const AGENT_NAMES: Record<AgentId, string> = { claude: "Claude Code", cursor: "Cursor", codex: "Codex" };
+
+export function applyFileWrites(writes: { dest: string; text: string }[]): void {
+  for (const write of writes) {
+    mkdirSync(dirname(write.dest), { recursive: true });
+    writeFileSync(write.dest, write.text, "utf8");
+  }
+}
+
+/** Unlinks the path itself. A symlink is removed without following it into the target. */
+export function applyRemovals(dests: string[]): void {
+  for (const dest of dests) rmSync(dest, { recursive: true, force: true });
+}
 
 export function applyWrites(writes: FinalWrite[]): void {
   for (const write of writes) {
@@ -23,9 +37,26 @@ export function displayPath(path: string, roots: Roots): string {
   return path;
 }
 
-const plural = (count: number, noun: string): string => `${count} ${noun}${count === 1 ? "" : "s"}`;
+export const plural = (count: number, noun: string): string => `${count} ${noun}${count === 1 ? "" : "s"}`;
 
-export function reviewLines(plan: Plan, writes: FinalWrite[], roots: Roots): string[] {
+export interface ReviewEntry {
+  path: string;
+  detail: string;
+  removal: boolean;
+}
+
+export interface Review {
+  entries: ReviewEntry[];
+  fileCount: number;
+}
+
+export function reviewEntries(
+  plan: Plan,
+  writes: FinalWrite[],
+  roots: Roots,
+  files: { dest: string }[] = [],
+  removals: SkillRemoval[] = [],
+): Review {
   const written = new Set(writes.map((write) => write.dest));
   const folders = new Map<string, { skills: number; readers: AgentId[] }>();
   for (const planned of plan.writes) {
@@ -34,19 +65,50 @@ export function reviewLines(plan: Plan, writes: FinalWrite[], roots: Roots): str
     entry.skills += 1;
     folders.set(planned.folder, entry);
   }
-  const lines = [...folders].map(([folder, { skills, readers }]) => {
-    const names = readers.map((agent) => AGENT_NAMES[agent]).join(", ");
-    return `${displayPath(folder, roots)}: ${plural(skills, "skill")}, read by ${names}`;
-  });
-  const fileCount = writes.reduce((sum, write) => sum + Object.keys(write.files).length, 0);
+  const entry = (dest: string, detail: string, removal = false) => ({ path: displayPath(dest, roots), detail, removal });
+  const entries = [
+    ...[...folders].map(([folder, { skills, readers }]) =>
+      entry(folder, `${plural(skills, "skill")}, read by ${readers.map((agent) => AGENT_NAMES[agent]).join(", ")}`),
+    ),
+    ...files.map((file) => entry(file.dest, "coding principles")),
+    ...removals.map((removal) => entry(removal.dest, "remove", true)),
+  ];
+  const fileCount = writes.reduce((sum, write) => sum + Object.keys(write.files).length, 0) + files.length;
+  return { entries, fileCount };
+}
+
+export function reviewLines(...args: Parameters<typeof reviewEntries>): string[] {
+  const { entries, fileCount } = reviewEntries(...args);
+  const lines = entries.map((entry) => (entry.removal ? `remove ${entry.path}` : `${entry.path}: ${entry.detail}`));
   return [...lines, `${plural(fileCount, "file")} total`];
 }
 
-export function nextStepLines(agents: AgentId[], skills: string[]): string[] {
+export interface NextStep {
+  command: string;
+  agents: AgentId[];
+}
+
+export function nextSteps(agents: AgentId[], skills: string[]): NextStep[] {
   const skill = skills.includes("calibrate") ? "calibrate" : skills[0];
   const slash = (["claude", "cursor"] as const).filter((agent) => agents.includes(agent));
-  const lines: string[] = [];
-  if (slash.length > 0) lines.push(`${slash.map((agent) => AGENT_NAMES[agent]).join(" / ")}: /${skill}`);
-  if (agents.includes("codex")) lines.push(`Codex: $${skill}`);
-  return lines;
+  const steps: NextStep[] = [];
+  if (slash.length > 0) steps.push({ command: `/${skill}`, agents: slash });
+  if (agents.includes("codex")) steps.push({ command: `$${skill}`, agents: ["codex"] });
+  return steps;
+}
+
+const agentNames = (agents: AgentId[]): string => agents.map((agent) => AGENT_NAMES[agent]).join(" / ");
+
+export function nextStepLines(agents: AgentId[], skills: string[]): string[] {
+  return nextSteps(agents, skills).map((step) => `${agentNames(step.agents)}: ${step.command}`);
+}
+
+/** The interactive closing screen. `--yes` prints nextStepLines instead. */
+export function finishedLines(fileCount: number, agents: AgentId[], skills: string[]): string[] {
+  const next = nextSteps(agents, skills).map((step, index) => {
+    const lead = styleText("dim", index === 0 ? "Next  " : "      ");
+    return `${lead}${foreground("magenta", styleText("bold", step.command))}${styleText("dim", `  in ${agentNames(step.agents)}`)}`;
+  });
+  const wrote = styleText("bold", `Wrote ${plural(fileCount, "file")}.`);
+  return [stepperLine(STEPS.length), "", wrote, "", ...next, `${styleText("dim", "Docs  ")}${styleText("dim", DOCS_URL)}`];
 }

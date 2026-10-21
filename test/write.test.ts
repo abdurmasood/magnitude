@@ -2,7 +2,18 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFil
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
-import { applyWrites, displayPath, nextStepLines, reviewLines } from "../src/write.js";
+import { stripVTControlCharacters as plain } from "node:util";
+import {
+  applyFileWrites,
+  applyRemovals,
+  applyWrites,
+  displayPath,
+  finishedLines,
+  nextStepLines,
+  nextSteps,
+  reviewEntries,
+  reviewLines,
+} from "../src/write.js";
 import type { FinalWrite, Plan, Roots, SkillWrite } from "../src/types.js";
 
 const temp = () => mkdtempSync(join(tmpdir(), "magnitude-write-"));
@@ -60,6 +71,34 @@ describe("nextStepLines", () => {
     expect(nextStepLines(["claude", "cursor", "codex"], ["calibrate"])).toEqual(["Claude Code / Cursor: /calibrate", "Codex: $calibrate"]));
 });
 
+describe("nextSteps", () => {
+  test("groups the slash agents and lists Codex apart", () =>
+    expect(nextSteps(["claude", "cursor", "codex"], ["open-pr", "calibrate"])).toEqual([
+      { command: "/calibrate", agents: ["claude", "cursor"] },
+      { command: "$calibrate", agents: ["codex"] },
+    ]));
+  test("Codex alone has one step", () => expect(nextSteps(["codex"], ["open-pr"])).toEqual([{ command: "$open-pr", agents: ["codex"] }]));
+});
+
+describe("finishedLines", () => {
+  test("shows every step done, the file count, the next commands and the docs", () => {
+    expect(finishedLines(12, ["claude", "cursor", "codex"], ["calibrate"]).map((line) => plain(line))).toEqual([
+      "✓ agents ── ✓ location ── ✓ skills ── ✓ review",
+      "",
+      "Wrote 12 files.",
+      "",
+      "Next  /calibrate  in Claude Code / Cursor",
+      "      $calibrate  in Codex",
+      "Docs  github.com/abdurmasood/magnitude",
+    ]);
+  });
+  test("spells one file and leads with Codex when it is the only agent", () => {
+    const lines = finishedLines(1, ["codex"], ["open-pr"]).map((line) => plain(line));
+    expect(lines[2]).toBe("Wrote 1 file.");
+    expect(lines.slice(4)).toEqual(["Next  $open-pr  in Codex", "Docs  github.com/abdurmasood/magnitude"]);
+  });
+});
+
 describe("reviewLines", () => {
   const roots: Roots = { project: "/work/app", home: "/home/me" };
   const sw = (skill: string, folder: string, readers: SkillWrite["readers"]): SkillWrite => ({
@@ -67,6 +106,9 @@ describe("reviewLines", () => {
   });
   const plan: Plan = {
     warnings: [],
+    instructions: [],
+    removals: [],
+    notes: [],
     writes: [
       sw("a", "/home/me/.claude/skills", ["claude", "cursor"]),
       sw("b", "/home/me/.claude/skills", ["claude", "cursor"]),
@@ -90,6 +132,69 @@ describe("reviewLines", () => {
   test("skips folders with no final write and shows project folders relative to the project", () => {
     const writes = [final("/work/app/.agents/skills/c", 1)];
     expect(reviewLines(plan, writes, roots)).toEqual([".agents/skills: 1 skill, read by Codex", "1 file total"]);
+  });
+
+  test("lists coding principles files and skill removals", () => {
+    const withRemoval: Plan = { ...plan, removals: [{ dest: "/work/app/.claude/skills/coding-principles" }] };
+    expect(reviewLines(withRemoval, [], roots, [{ dest: "/work/app/AGENTS.md" }], withRemoval.removals)).toEqual([
+      "AGENTS.md: coding principles",
+      "remove .claude/skills/coding-principles",
+      "1 file total",
+    ]);
+  });
+});
+
+describe("reviewEntries", () => {
+  const roots: Roots = { project: "/work/app", home: "/home/me" };
+  const plan: Plan = {
+    warnings: [],
+    instructions: [],
+    removals: [{ dest: "/work/app/.claude/skills/coding-principles" }],
+    notes: [],
+    writes: [{ skill: "a", folder: "/work/app/.claude/skills", dest: "/work/app/.claude/skills/a", files: {}, status: "new", readers: ["claude"] }],
+  };
+
+  test("returns folders, principles files and removals with the file count", () => {
+    const writes: FinalWrite[] = [{ dest: "/work/app/.claude/skills/a", mode: "create", files: { "SKILL.md": "x", "b.md": "y" } }];
+    expect(reviewEntries(plan, writes, roots, [{ dest: "/work/app/AGENTS.md" }], plan.removals)).toEqual({
+      entries: [
+        { path: ".claude/skills", detail: "1 skill, read by Claude Code", removal: false },
+        { path: "AGENTS.md", detail: "coding principles", removal: false },
+        { path: ".claude/skills/coding-principles", detail: "remove", removal: true },
+      ],
+      fileCount: 3,
+    });
+  });
+});
+
+describe("applyFileWrites / applyRemovals", () => {
+  test("writes the file, creates missing parents, and leaves sibling files", () => {
+    const dir = temp();
+    writeFileSync(join(dir, "other.md"), "stay");
+    const dest = join(dir, "nested", "AGENTS.md");
+    applyFileWrites([{ dest, text: "principles\n" }]);
+    expect(readFileSync(dest, "utf8")).toBe("principles\n");
+    expect(readFileSync(join(dir, "other.md"), "utf8")).toBe("stay");
+  });
+
+  test("removes a skill directory", () => {
+    const dest = join(temp(), "coding-principles");
+    mkdirSync(dest);
+    writeFileSync(join(dest, "SKILL.md"), "x");
+    applyRemovals([dest]);
+    expect(existsSync(dest)).toBe(false);
+  });
+
+  test("removes a symlinked skill directory without deleting the target", () => {
+    const root = temp();
+    const target = join(root, "target");
+    mkdirSync(target);
+    writeFileSync(join(target, "keep.md"), "keep");
+    const dest = join(root, "link");
+    symlinkSync(target, dest);
+    applyRemovals([dest]);
+    expect(existsSync(dest)).toBe(false);
+    expect(readFileSync(join(target, "keep.md"), "utf8")).toBe("keep");
   });
 });
 

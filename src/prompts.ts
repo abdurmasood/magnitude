@@ -1,5 +1,7 @@
-import { confirm, isCancel, multiselect, select } from "@clack/prompts";
-import type { AgentId, Answers, Decision, Scope, Skill, SkillWrite } from "./types.js";
+import { styleText } from "node:util";
+import { pick } from "./picker.js";
+import type { AgentId, Answers, Decision, Scope, Skill } from "./types.js";
+import { plural, type ReviewEntry } from "./write.js";
 
 const AGENT_OPTIONS: { value: AgentId; label: string; signal: string }[] = [
   { value: "claude", label: "Claude Code", signal: "found .claude/" },
@@ -14,43 +16,46 @@ function oneLine(text: string): string {
   return flat.length > HINT_WIDTH ? `${flat.slice(0, HINT_WIDTH - 1)}…` : flat;
 }
 
-/** clack returns a cancel symbol on Ctrl-C; callers only see null. */
-const orNull = <T>(value: T): Exclude<T, symbol> | null => (isCancel(value) ? null : (value as Exclude<T, symbol>));
-
 async function askAgents(detected: AgentId[]): Promise<AgentId[] | null> {
-  const answer = await multiselect<AgentId>({
-    message: "Which agents do you use? (space to toggle, enter to confirm)",
+  return pick({
+    message: "Which agents do you use?",
     options: AGENT_OPTIONS.map(({ value, label, signal }) => ({
       value,
       label,
       hint: detected.includes(value) ? signal : undefined,
     })),
-    initialValues: detected,
+    initial: detected,
+    multiple: true,
+    step: 0,
+    body: detected.length > 0 ? [styleText("dim", `Found ${detected.length}.`)] : undefined,
     required: true,
   });
-  return orNull(answer);
 }
 
 async function askScope(initial: Scope): Promise<Scope | null> {
-  const answer = await select<Scope>({
+  const answer = await pick<Scope>({
     message: "Where should the skills go?",
     options: [
       { value: "project", label: "This project", hint: "shared with the team via git" },
       { value: "global", label: "Global", hint: "every project on this machine" },
     ],
-    initialValue: initial,
+    initial: [initial],
+    multiple: false,
+    step: 1,
   });
-  return orNull(answer);
+  if (answer === null) return null;
+  return answer[0];
 }
 
 async function askSkills(initial: string[], skills: Skill[]): Promise<string[] | null> {
-  const answer = await multiselect<string>({
+  return pick({
     message: "Which skills?",
     options: skills.map((skill) => ({ value: skill.name, label: skill.name, hint: oneLine(skill.description) })),
-    initialValues: initial,
+    initial,
+    multiple: true,
+    step: 2,
     required: true,
   });
-  return orNull(answer);
 }
 
 /** Asks only the questions that `preset` leaves open. */
@@ -64,25 +69,52 @@ export async function askAnswers(defaults: Answers, preset: Partial<Answers>, sk
   return { agents, scope, skills: chosen };
 }
 
-export async function askDecisions(conflicts: SkillWrite[]): Promise<Record<string, Decision> | null> {
+/** `label` is the short path shown in the question; answers are keyed by `dest`. */
+export interface Conflict {
+  dest: string;
+  label: string;
+  instruction?: boolean;
+}
+
+export async function askDecisions(conflicts: Conflict[]): Promise<Record<string, Decision> | null> {
   const decisions: Record<string, Decision> = {};
   for (const conflict of conflicts) {
-    const answer = await select<Decision>({
-      message: `${conflict.dest} already exists and differs. Replace it?`,
+    const answer = await pick<Decision>({
+      message: conflict.instruction
+        ? `Coding principles in ${conflict.label} differ. Replace them?`
+        : `${conflict.label} already exists and differs. Replace it?`,
       options: [
         { value: "keep", label: "No, keep mine" },
         { value: "replace", label: "Yes, replace" },
       ],
-      initialValue: "keep",
+      initial: ["keep"],
+      multiple: false,
+      step: 3,
     });
-    const decision = orNull(answer);
-    if (decision === null) return null;
-    decisions[conflict.dest] = decision;
+    if (answer === null) return null;
+    decisions[conflict.dest] = answer[0];
   }
   return decisions;
 }
 
-/** `lines` are the review lines, already printed by the caller; the last one is the file total. */
-export async function askConfirm(lines: string[]): Promise<boolean | null> {
-  return orNull(await confirm({ message: `Write them? (${lines[lines.length - 1]})` }));
+/** A blank line, then one row per entry: the path padded to a column, then the detail dimmed. */
+function entryLines(entries: ReviewEntry[]): string[] {
+  const width = Math.max(0, ...entries.map((entry) => entry.path.length)) + 2;
+  return ["", ...entries.map((entry) => `  ${entry.path.padEnd(width)}${styleText("dim", entry.detail)}`)];
+}
+
+export async function askConfirm(entries: ReviewEntry[], fileCount: number): Promise<boolean | null> {
+  const answer = await pick({
+    message: `Write ${plural(fileCount, "file")}?`,
+    body: entryLines(entries),
+    options: [
+      { value: true, label: "Yes" },
+      { value: false, label: "No" },
+    ],
+    initial: [true],
+    multiple: false,
+    step: 3,
+  });
+  if (answer === null) return null;
+  return answer[0];
 }

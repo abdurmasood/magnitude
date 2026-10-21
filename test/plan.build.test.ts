@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
-import { buildPlan, expectedFiles, folderPath, foldersReadBy, resolveWrites } from "../src/plan.js";
+import { CURSOR_GLOBAL_NOTE, upsertPrinciples } from "../src/principles.js";
+import { buildPlan, expectedFiles, folderPath, foldersReadBy, resolveInstructions, resolveWrites, type PrinciplesContext } from "../src/plan.js";
 import type { Plan, Roots, Scan, Skill } from "../src/types.js";
 
 const roots: Roots = { project: "/p", home: "/h" };
@@ -125,6 +126,80 @@ describe("buildPlan warnings", () => {
     };
     const plan = buildPlan({ agents: ["claude", "cursor"], scope: "project", skills: ["auto-skill"] }, skills, same, scan);
     expect(plan.warnings).toEqual([{ skill: "auto-skill", folder: "/h/.cursor/skills", agents: ["cursor"] }]);
+  });
+});
+
+describe("buildPlan principles", () => {
+  const body = "Rule\n";
+  const context = (files: Record<string, string>, legacySkills: PrinciplesContext["legacySkills"] = {}): PrinciplesContext => ({
+    body,
+    files,
+    legacy: { "SKILL.md": "shipped\n" },
+    legacySkills,
+  });
+
+  test("a missing AGENTS.md is new", () => {
+    const plan = buildPlan({ agents: ["cursor"], scope: "project", skills: [] }, skills, roots, {}, context({}));
+    expect(plan.instructions).toEqual([{ dest: "/p/AGENTS.md", status: "new", text: upsertPrinciples(undefined, body).text }]);
+  });
+
+  test("existing text is kept and the block is appended", () => {
+    const plan = buildPlan({ agents: ["cursor"], scope: "project", skills: [] }, skills, roots, {}, context({ "/p/AGENTS.md": "# Mine\n" }));
+    expect(plan.instructions[0].status).toBe("new");
+    expect(plan.instructions[0].text.startsWith("# Mine\n\n")).toBe(true);
+  });
+
+  test("an identical block is skipped", () => {
+    const text = upsertPrinciples(undefined, body).text;
+    const plan = buildPlan({ agents: ["cursor"], scope: "project", skills: [] }, skills, roots, {}, context({ "/p/AGENTS.md": text }));
+    expect(plan.instructions[0].status).toBe("identical");
+  });
+
+  test("a different block is a conflict and the replacement keeps surrounding text", () => {
+    const existing = upsertPrinciples("# Mine\n", "old\n").text;
+    const plan = buildPlan({ agents: ["cursor"], scope: "project", skills: [] }, skills, roots, {}, context({ "/p/AGENTS.md": existing }));
+    expect(plan.instructions[0].status).toBe("conflict");
+    expect(plan.instructions[0].text.startsWith("# Mine\n\n")).toBe(true);
+    expect(plan.instructions[0].text).toContain("Rule");
+    expect(plan.instructions[0].text).not.toContain("old");
+  });
+
+  test("global Cursor sets the note and writes no principles file", () => {
+    const plan = buildPlan({ agents: ["cursor"], scope: "global", skills: ["auto-skill"] }, skills, roots, {}, context({}));
+    expect(plan.notes).toEqual([CURSOR_GLOBAL_NOTE]);
+    expect(plan.instructions).toEqual([]);
+    expect(plan.writes[0].dest).toBe("/h/.agents/skills/auto-skill");
+  });
+
+  test("an identical old skill is removed and an edited one is reported", () => {
+    const dest = "/p/.claude/skills/coding-principles";
+    const same = buildPlan({ agents: ["claude"], scope: "project", skills: [] }, skills, roots, {}, context({}, { [dest]: { "SKILL.md": "shipped\n" } }));
+    expect(same.removals).toEqual([{ dest }]);
+    const edited = buildPlan({ agents: ["claude"], scope: "project", skills: [] }, skills, roots, {}, context({}, { [dest]: { "SKILL.md": "mine\n" } }));
+    expect(edited.removals).toEqual([]);
+    expect(edited.notes).toEqual(["Kept .claude/skills/coding-principles (old coding-principles skill was edited; remove it yourself)"]);
+  });
+});
+
+describe("resolveInstructions", () => {
+  const plan: Plan = {
+    writes: [],
+    warnings: [],
+    notes: [],
+    removals: [],
+    instructions: [
+      { dest: "/p/AGENTS.md", status: "new", text: "new" },
+      { dest: "/p/CLAUDE.md", status: "conflict", text: "replaced" },
+      { dest: "/p/skip.md", status: "identical", text: "same" },
+    ],
+  };
+
+  test("new is written, a replaced conflict is written, identical and kept conflicts are not", () => {
+    expect(resolveInstructions(plan, { "/p/CLAUDE.md": "replace" })).toEqual([
+      { dest: "/p/AGENTS.md", text: "new" },
+      { dest: "/p/CLAUDE.md", text: "replaced" },
+    ]);
+    expect(resolveInstructions(plan, { "/p/CLAUDE.md": "keep" })).toEqual([{ dest: "/p/AGENTS.md", text: "new" }]);
   });
 });
 

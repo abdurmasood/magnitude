@@ -12,6 +12,14 @@ export type Scan = Record<string, Record<string, FileMap>>;
 export type WriteStatus = "new" | "identical" | "conflict";
 export interface SkillWrite { skill: string; folder: string; dest: string; files: FileMap; status: WriteStatus; readers: AgentId[] }
 export interface DuplicateWarning { skill: string; folder: string; agents: AgentId[] }
-export interface Plan { writes: SkillWrite[]; warnings: DuplicateWarning[] }
+export interface InstructionWrite { dest: string; status: WriteStatus; text: string }
+export interface SkillRemoval { dest: string }
+export interface Plan {
+  writes: SkillWrite[];
+  warnings: DuplicateWarning[];
+  instructions: InstructionWrite[];
+  removals: SkillRemoval[];
+  notes: string[];
+}
 export type Decision = "replace" | "keep";
 export interface FinalWrite { dest: string; files: FileMap; mode: "create" | "replace" }

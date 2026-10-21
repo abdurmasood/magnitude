@@ -16,10 +16,11 @@
   },
   "files": [
     "dist",
+    "instructions",
     "skills"
   ],
   "engines": {
-    "node": ">=20"
+    "node": ">=20.12.0"
   },
   "scripts": {
     "build": "tsup",
@@ -27,7 +28,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@clack/prompts": "^1.8.1",
+    "@clack/core": "^1.5.1",
     "yaml": "^2.9.1"
   },
   "devDependencies": {

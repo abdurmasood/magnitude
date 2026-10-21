@@ -1,13 +1,15 @@
-import { readFileSync } from "node:fs";
-import { dirname, resolve, sep } from "node:path";
+import { readFileSync, statSync } from "node:fs";
+import { dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { detectAgents, findProjectRoot, scanPresence, scanSkills } from "./detect.js";
 import { parseFlags, resolveNonInteractive, UsageError, type Flags } from "./flags.js";
-import { buildPlan, folderPath, foldersReadBy, resolveWrites, targetFolders } from "./plan.js";
-import { askAnswers, askConfirm, askDecisions } from "./prompts.js";
-import { loadSkills } from "./skills.js";
-import type { AgentId, Answers, Decision, DuplicateWarning, Plan, Roots, Scan, Skill, SkillWrite } from "./types.js";
-import { AGENT_NAMES, applyWrites, displayPath, nextStepLines, reviewLines } from "./write.js";
+import { buildPlan, folderPath, foldersReadBy, resolveInstructions, resolveWrites, targetFolders, type PrinciplesContext } from "./plan.js";
+import { firstClaudeInstruction, loadLegacySkill, loadPrinciplesBody, principleDestinations } from "./principles.js";
+import { askAnswers, askConfirm, askDecisions, type Conflict } from "./prompts.js";
+import { isMissing, loadSkills, readFilesRecursive } from "./skills.js";
+import type { AgentId, Answers, Decision, DuplicateWarning, FileMap, Plan, Roots, Scan, Skill, SkillWrite } from "./types.js";
+import { headerLine } from "./theme.js";
+import { AGENT_NAMES, applyFileWrites, applyRemovals, applyWrites, displayPath, finishedLines, nextStepLines, reviewEntries, reviewLines } from "./write.js";
 
 export interface InitOptions {
   argv: string[];
@@ -73,8 +75,9 @@ async function run(opts: InitOptions): Promise<number> {
     return 1;
   }
   const roots: Roots = { project: findProjectRoot(opts.cwd), home: opts.home };
+  if (opts.interactive && !flags.yes) printAll(opts.log, [headerLine(), ""]);
   const answers = await chooseAnswers(flags, detectAgents(roots.project), skills);
-  const plan = buildPlan(answers, skills, roots, scanFor(answers, roots));
+  const plan = buildPlan(answers, skills, roots, scanFor(answers, roots), principlesFor(answers, roots));
   for (const warning of plan.warnings) opts.log(warningLine(warning, roots));
   return install({ log: opts.log, flags, roots }, answers, plan);
 }
@@ -86,18 +89,34 @@ interface RunContext {
 }
 
 async function install({ log, flags, roots }: RunContext, answers: Answers, plan: Plan): Promise<number> {
-  const conflicts = plan.writes.filter((write) => write.status === "conflict");
+  for (const note of plan.notes) log(note);
+  const label = (dest: string) => displayPath(dest, roots);
+  const conflicts: Conflict[] = [
+    ...plan.writes.filter((write) => write.status === "conflict").map((write) => ({ dest: write.dest, label: label(write.dest) })),
+    ...plan.instructions
+      .filter((write) => write.status === "conflict")
+      .map((write) => ({ dest: write.dest, label: label(write.dest), instruction: true })),
+  ];
   const decisions = await chooseDecisions(flags, conflicts);
-  for (const write of conflicts) {
-    if (decisions[write.dest] !== "replace") log(keptLine(write, roots));
+  for (const write of plan.writes) {
+    if (write.status === "conflict" && decisions[write.dest] !== "replace") log(keptLine(write, roots));
+  }
+  for (const write of plan.instructions) {
+    if (write.status === "conflict" && decisions[write.dest] !== "replace") log(instructionKeptLine(write.dest, roots));
   }
   const writes = resolveWrites(plan, decisions);
-  if (writes.length === 0) return printAll(log, [nothingToWrite(conflicts, decisions)]);
-  const review = reviewLines(plan, writes, roots);
-  review.forEach((line) => log(line));
-  if (!flags.yes && !unlessCancelled(await askConfirm(review))) throw new Cancelled();
+  const files = resolveInstructions(plan, decisions);
+  if (writes.length === 0 && files.length === 0 && plan.removals.length === 0) {
+    return printAll(log, [nothingToWrite(conflicts, decisions)]);
+  }
+  const review = reviewEntries(plan, writes, roots, files, plan.removals);
+  if (flags.yes) printAll(log, reviewLines(plan, writes, roots, files, plan.removals));
+  else if (!unlessCancelled(await askConfirm(review.entries, review.fileCount))) throw new Cancelled();
   applyWrites(writes);
-  return printAll(log, nextStepLines(answers.agents, answers.skills));
+  applyFileWrites(files);
+  applyRemovals(plan.removals.map((removal) => removal.dest));
+  if (flags.yes) return printAll(log, nextStepLines(answers.agents, answers.skills));
+  return printAll(log, finishedLines(review.fileCount, answers.agents, answers.skills));
 }
 
 function printAll(log: InitOptions["log"], lines: string[]): number {
@@ -136,12 +155,56 @@ function keptLine(write: SkillWrite, roots: Roots): string {
   return `Kept ${displayPath(write.dest, roots)} (differs from ours; use --replace to overwrite)`;
 }
 
+function instructionKeptLine(dest: string, roots: Roots): string {
+  return `Kept ${displayPath(dest, roots)} (coding principles differ; use --replace to overwrite)`;
+}
+
+const LEGACY_SKILL = "coding-principles";
+
+function isFile(path: string): boolean {
+  try {
+    return statSync(path).isFile();
+  } catch (error) {
+    if (isMissing(error)) return false;
+    throw error;
+  }
+}
+
+/** A directory's files, or a non-matching stand-in when something else is at that path. Missing is undefined. */
+function readLegacy(path: string): FileMap | undefined {
+  try {
+    if (!statSync(path).isDirectory()) return { "SKILL.md": "" };
+    return readFilesRecursive(path);
+  } catch (error) {
+    if (isMissing(error)) return undefined;
+    throw error;
+  }
+}
+
+function principlesFor(answers: Answers, roots: Roots): PrinciplesContext {
+  const claudeFile =
+    answers.scope === "project" && answers.agents.includes("claude")
+      ? firstClaudeInstruction(roots.project, isFile)
+      : undefined;
+  const files: Record<string, string> = {};
+  for (const { dest } of principleDestinations(answers.agents, answers.scope, roots, claudeFile)) {
+    if (isFile(dest)) files[dest] = readFileSync(dest, "utf8");
+  }
+  const legacySkills: Record<string, FileMap> = {};
+  for (const folder of [...new Set(answers.agents.flatMap((agent) => foldersReadBy(agent, roots)))]) {
+    const dest = join(folder, LEGACY_SKILL);
+    const found = readLegacy(dest);
+    if (found) legacySkills[dest] = found;
+  }
+  return { body: loadPrinciplesBody(), claudeFile, files, legacy: loadLegacySkill(), legacySkills };
+}
+
 function warningLine(warning: DuplicateWarning, roots: Roots): string {
   const agents = warning.agents.map((agent) => AGENT_NAMES[agent]).join(" and ");
   return `${agents} will also load ${displayPath(`${warning.folder}${sep}${warning.skill}`, roots)}`;
 }
 
-async function chooseDecisions(flags: Flags, conflicts: SkillWrite[]): Promise<Record<string, Decision>> {
+async function chooseDecisions(flags: Flags, conflicts: Conflict[]): Promise<Record<string, Decision>> {
   if (conflicts.length === 0) return {};
   const all = (decision: Decision) => Object.fromEntries(conflicts.map((write) => [write.dest, decision]));
   if (flags.replace) return all("replace");
@@ -149,7 +212,7 @@ async function chooseDecisions(flags: Flags, conflicts: SkillWrite[]): Promise<R
   return unlessCancelled(await askDecisions(conflicts));
 }
 
-function nothingToWrite(conflicts: SkillWrite[], decisions: Record<string, Decision>): string {
+function nothingToWrite(conflicts: { dest: string }[], decisions: Record<string, Decision>): string {
   const kept = conflicts.filter((write) => decisions[write.dest] !== "replace").length;
   return kept === 0 ? "Everything is already up to date." : `Nothing to write. Kept ${kept} existing skill(s).`;
 }
