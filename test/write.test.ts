@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFil
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
-import { applyWrites, displayPath, nextStepLines, reviewLines } from "../src/write.js";
+import { applyFileWrites, applyRemovals, applyWrites, displayPath, nextStepLines, reviewLines } from "../src/write.js";
 import type { FinalWrite, Plan, Roots, SkillWrite } from "../src/types.js";
 
 const temp = () => mkdtempSync(join(tmpdir(), "magnitude-write-"));
@@ -67,6 +67,9 @@ describe("reviewLines", () => {
   });
   const plan: Plan = {
     warnings: [],
+    instructions: [],
+    removals: [],
+    notes: [],
     writes: [
       sw("a", "/home/me/.claude/skills", ["claude", "cursor"]),
       sw("b", "/home/me/.claude/skills", ["claude", "cursor"]),
@@ -90,6 +93,46 @@ describe("reviewLines", () => {
   test("skips folders with no final write and shows project folders relative to the project", () => {
     const writes = [final("/work/app/.agents/skills/c", 1)];
     expect(reviewLines(plan, writes, roots)).toEqual([".agents/skills: 1 skill, read by Codex", "1 file total"]);
+  });
+
+  test("lists coding principles files and skill removals", () => {
+    const withRemoval: Plan = { ...plan, removals: [{ dest: "/work/app/.claude/skills/coding-principles" }] };
+    expect(reviewLines(withRemoval, [], roots, [{ dest: "/work/app/AGENTS.md" }], withRemoval.removals)).toEqual([
+      "AGENTS.md: coding principles",
+      "remove .claude/skills/coding-principles",
+      "1 file total",
+    ]);
+  });
+});
+
+describe("applyFileWrites / applyRemovals", () => {
+  test("writes the file, creates missing parents, and leaves sibling files", () => {
+    const dir = temp();
+    writeFileSync(join(dir, "other.md"), "stay");
+    const dest = join(dir, "nested", "AGENTS.md");
+    applyFileWrites([{ dest, text: "principles\n" }]);
+    expect(readFileSync(dest, "utf8")).toBe("principles\n");
+    expect(readFileSync(join(dir, "other.md"), "utf8")).toBe("stay");
+  });
+
+  test("removes a skill directory", () => {
+    const dest = join(temp(), "coding-principles");
+    mkdirSync(dest);
+    writeFileSync(join(dest, "SKILL.md"), "x");
+    applyRemovals([dest]);
+    expect(existsSync(dest)).toBe(false);
+  });
+
+  test("removes a symlinked skill directory without deleting the target", () => {
+    const root = temp();
+    const target = join(root, "target");
+    mkdirSync(target);
+    writeFileSync(join(target, "keep.md"), "keep");
+    const dest = join(root, "link");
+    symlinkSync(target, dest);
+    applyRemovals([dest]);
+    expect(existsSync(dest)).toBe(false);
+    expect(readFileSync(join(target, "keep.md"), "utf8")).toBe("keep");
   });
 });
 
