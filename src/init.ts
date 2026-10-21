@@ -1,7 +1,7 @@
 import { readFileSync, statSync } from "node:fs";
 import { dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { detectAgents, findProjectRoot, scanPresence, scanSkills } from "./detect.js";
+import { detectAgents, findProjectRoot, scanPresence, scanSkills, type Detection } from "./detect.js";
 import { parseFlags, resolveNonInteractive, UsageError, type Flags } from "./flags.js";
 import { buildPlan, folderPath, foldersReadBy, resolveInstructions, resolveWrites, targetFolders, type PrinciplesContext } from "./plan.js";
 import { firstClaudeInstruction, loadLegacySkill, loadPrinciplesBody, principleDestinations } from "./principles.js";
@@ -128,15 +128,15 @@ function readVersion(): string {
   return (JSON.parse(readFileSync(path, "utf8")) as { version: string }).version;
 }
 
-async function chooseAnswers(flags: Flags, detected: AgentId[], skills: Skill[]): Promise<Answers> {
+async function chooseAnswers(flags: Flags, detected: Detection, skills: Skill[]): Promise<Answers> {
   const names = skills.map((skill) => skill.name);
-  if (flags.yes) return resolveNonInteractive(flags, detected, names);
+  if (flags.yes) return resolveNonInteractive(flags, detected.agents, names);
   const preset: Partial<Answers> = {};
   if (flags.agents) preset.agents = flags.agents;
   if (flags.skills) preset.skills = flags.skills === "all" ? names : flags.skills;
   if (flags.global) preset.scope = "global";
-  const defaults: Answers = { agents: detected, scope: "project", skills: names };
-  return unlessCancelled(await askAnswers(defaults, preset, skills));
+  const defaults: Answers = { agents: detected.agents, scope: "project", skills: names };
+  return unlessCancelled(await askAnswers(defaults, preset, skills, detected.hints));
 }
 
 /**
