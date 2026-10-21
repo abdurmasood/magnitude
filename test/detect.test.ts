@@ -35,26 +35,63 @@ describe("findProjectRoot", () => {
 });
 
 describe("detectAgents", () => {
-  test("returns [] when nothing is detected", () => {
-    expect(detectAgents(tmp)).toEqual([]);
+  function arrange(project: string[]): void {
+    for (const name of project) {
+      if (name.endsWith("/")) mkdirSync(join(tmp, name), { recursive: true });
+      else writeFileSync(join(tmp, name), "x");
+    }
+  }
+
+  test("returns nothing for an empty project", () => {
+    expect(detectAgents(tmp)).toEqual({ agents: [], hints: {} });
   });
 
   test.each([
-    [".claude", "dir", ["claude"]],
-    [".cursor", "dir", ["cursor"]],
-    [".agents", "dir", ["codex"]],
-    [".codex", "dir", ["codex"]],
-    ["AGENTS.md", "file", ["codex"]],
-  ])("%s (%s) maps to %j", (name, kind, expected) => {
-    if (kind === "dir") mkdirSync(join(tmp, name));
-    else writeFileSync(join(tmp, name), "# agents\n");
-    expect(detectAgents(tmp)).toEqual(expected);
+    ["CLAUDE.md", "claude"],
+    [".claude/", "claude"],
+    [".cursor/", "cursor"],
+    [".cursorrules", "cursor"],
+    [".codex/", "codex"],
+  ] as const)("%s ticks %s", (name, agent) => {
+    arrange([name]);
+    expect(detectAgents(tmp)).toEqual({ agents: [agent], hints: { [agent]: `found ${name}` } });
+  });
+
+  test("names the first own signal found for an agent", () => {
+    arrange(["CLAUDE.md", ".claude/"]);
+    expect(detectAgents(tmp).hints).toEqual({ claude: "found CLAUDE.md" });
+  });
+
+  test.each(["AGENTS.md", ".agents/"])("%s ticks nothing but hints at both readers", (name) => {
+    arrange([name]);
+    expect(detectAgents(tmp)).toEqual({ agents: [], hints: { cursor: `${name} found`, codex: `${name} found` } });
+  });
+
+  test("an own signal ticks its agent while shared ones only hint at the rest", () => {
+    arrange([".claude/", "AGENTS.md", ".agents/"]);
+    expect(detectAgents(tmp)).toEqual({
+      agents: ["claude"],
+      hints: { claude: "found .claude/", cursor: "AGENTS.md found", codex: "AGENTS.md found" },
+    });
+  });
+
+  test("an own signal's hint wins over a shared one", () => {
+    arrange([".cursor/", "AGENTS.md"]);
+    expect(detectAgents(tmp)).toEqual({
+      agents: ["cursor"],
+      hints: { cursor: "found .cursor/", codex: "AGENTS.md found" },
+    });
+  });
+
+  test("orders claude, cursor, codex", () => {
+    arrange([".codex/", ".cursor/", ".claude/"]);
+    expect(detectAgents(tmp).agents).toEqual(["claude", "cursor", "codex"]);
   });
 
   test("ignores wrong entry types", () => {
     writeFileSync(join(tmp, ".claude"), "x");
     mkdirSync(join(tmp, "AGENTS.md"));
-    expect(detectAgents(tmp)).toEqual([]);
+    expect(detectAgents(tmp)).toEqual({ agents: [], hints: {} });
   });
 
   test("rethrows errors other than a missing entry", () => {
@@ -66,14 +103,6 @@ describe("detectAgents", () => {
     } finally {
       chmodSync(locked, 0o755);
     }
-  });
-
-  test("reports codex once and orders claude, cursor, codex", () => {
-    mkdirSync(join(tmp, ".agents"));
-    writeFileSync(join(tmp, "AGENTS.md"), "x");
-    mkdirSync(join(tmp, ".cursor"));
-    mkdirSync(join(tmp, ".claude"));
-    expect(detectAgents(tmp)).toEqual(["claude", "cursor", "codex"]);
   });
 });
 

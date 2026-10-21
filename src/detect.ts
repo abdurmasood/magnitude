@@ -27,18 +27,48 @@ export function findProjectRoot(cwd: string): string {
   }
 }
 
-export function detectAgents(root: string): AgentId[] {
-  const agents: AgentId[] = [];
-  if (isDirectory(join(root, ".claude"))) agents.push("claude");
-  if (isDirectory(join(root, ".cursor"))) agents.push("cursor");
-  if (
-    isDirectory(join(root, ".agents")) ||
-    isDirectory(join(root, ".codex")) ||
-    isFile(join(root, "AGENTS.md"))
-  ) {
-    agents.push("codex");
+interface Signal {
+  name: string;
+  kind: "dir" | "file";
+}
+
+const AGENT_ORDER: AgentId[] = ["claude", "cursor", "codex"];
+
+/** Project entries only one agent uses: each names that agent outright. */
+const OWN_SIGNALS: (Signal & { agent: AgentId })[] = [
+  { agent: "claude", name: "CLAUDE.md", kind: "file" },
+  { agent: "claude", name: ".claude", kind: "dir" },
+  { agent: "cursor", name: ".cursor", kind: "dir" },
+  { agent: "cursor", name: ".cursorrules", kind: "file" },
+  { agent: "codex", name: ".codex", kind: "dir" },
+];
+
+/** Project entries several agents read, so they can't say which agent the project uses. */
+const SHARED_SIGNALS: (Signal & { readers: AgentId[] })[] = [
+  { name: "AGENTS.md", kind: "file", readers: ["cursor", "codex"] },
+  { name: ".agents", kind: "dir", readers: ["cursor", "codex"] },
+];
+
+const present = (root: string, signal: Signal): boolean =>
+  (signal.kind === "dir" ? isDirectory : isFile)(join(root, signal.name));
+const shown = (signal: Signal): string => (signal.kind === "dir" ? `${signal.name}/` : signal.name);
+
+/** Agents to pre-tick, plus the reason shown beside an agent in the picker, ticked or not. */
+export interface Detection {
+  agents: AgentId[];
+  hints: Partial<Record<AgentId, string>>;
+}
+
+/** Ticks only agents a project entry names outright; shared entries leave their readers unticked, with a hint. */
+export function detectAgents(project: string): Detection {
+  const hints: Partial<Record<AgentId, string>> = {};
+  const own = OWN_SIGNALS.filter((signal) => present(project, signal));
+  for (const signal of own) hints[signal.agent] ??= `found ${shown(signal)}`;
+  const ticked = new Set(own.map((signal) => signal.agent));
+  for (const signal of SHARED_SIGNALS.filter((signal) => present(project, signal))) {
+    for (const agent of signal.readers) hints[agent] ??= `${shown(signal)} found`;
   }
-  return agents;
+  return { agents: AGENT_ORDER.filter((agent) => ticked.has(agent)), hints };
 }
 
 type ReadSkill = (path: string) => Scan[string][string];

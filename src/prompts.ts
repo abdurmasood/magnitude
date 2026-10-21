@@ -3,11 +3,13 @@ import { pick } from "./picker.js";
 import type { AgentId, Answers, Decision, Scope, Skill } from "./types.js";
 import { plural, type ReviewEntry } from "./write.js";
 
-const AGENT_OPTIONS: { value: AgentId; label: string; signal: string }[] = [
-  { value: "claude", label: "Claude Code", signal: "found .claude/" },
-  { value: "cursor", label: "Cursor", signal: "found .cursor/" },
-  { value: "codex", label: "Codex", signal: "found .agents/, .codex/ or AGENTS.md" },
+const AGENT_OPTIONS: { value: AgentId; label: string }[] = [
+  { value: "claude", label: "Claude Code" },
+  { value: "cursor", label: "Cursor" },
+  { value: "codex", label: "Codex" },
 ];
+
+type AgentHints = Partial<Record<AgentId, string>>;
 
 const HINT_WIDTH = 60;
 
@@ -16,14 +18,11 @@ function oneLine(text: string): string {
   return flat.length > HINT_WIDTH ? `${flat.slice(0, HINT_WIDTH - 1)}…` : flat;
 }
 
-async function askAgents(detected: AgentId[]): Promise<AgentId[] | null> {
+/** `hints` holds the detection reason for each pre-ticked agent. */
+async function askAgents(detected: AgentId[], hints: AgentHints): Promise<AgentId[] | null> {
   return pick({
     message: "Which agents do you use?",
-    options: AGENT_OPTIONS.map(({ value, label, signal }) => ({
-      value,
-      label,
-      hint: detected.includes(value) ? signal : undefined,
-    })),
+    options: AGENT_OPTIONS.map(({ value, label }) => ({ value, label, hint: hints[value] })),
     initial: detected,
     multiple: true,
     step: 0,
@@ -59,8 +58,13 @@ async function askSkills(initial: string[], skills: Skill[]): Promise<string[] |
 }
 
 /** Asks only the questions that `preset` leaves open. */
-export async function askAnswers(defaults: Answers, preset: Partial<Answers>, skills: Skill[]): Promise<Answers | null> {
-  const agents = preset.agents ?? (await askAgents(defaults.agents));
+export async function askAnswers(
+  defaults: Answers,
+  preset: Partial<Answers>,
+  skills: Skill[],
+  hints: AgentHints,
+): Promise<Answers | null> {
+  const agents = preset.agents ?? (await askAgents(defaults.agents, hints));
   if (agents === null) return null;
   const scope = preset.scope ?? (await askScope(defaults.scope));
   if (scope === null) return null;
