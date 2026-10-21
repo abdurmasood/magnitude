@@ -14,17 +14,17 @@ discuss ──► /calibrate ──► plan ──► implement ──► /slice
 
 ## Install
 
-Set up this project (no CLI left behind):
-
-```
-npx @magnitudeai/cli init
-```
-
-Or install the command, then set up:
+Install the cli globally, then set up **(reccomended)**:
 
 ```
 npm i -g @magnitudeai/cli
 magnitude init
+```
+
+Or set up in project (no CLI left behind):
+
+```
+npx @magnitudeai/cli init
 ```
 
 ## Skills
