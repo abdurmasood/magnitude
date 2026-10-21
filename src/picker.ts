@@ -53,7 +53,10 @@ export function initialPickerState<T>(
   initial: readonly T[],
   multiple: boolean,
 ): PickerState<T> {
-  return { cursor: 0, selected: seed(options, initial, multiple), notice: "" };
+  const selected = seed(options, initial, multiple);
+  // A chosen answer starts on Submit, so Enter confirms it. An empty list starts on the first row.
+  const cursor = selected.length > 0 ? options.length : 0;
+  return { cursor, selected, notice: "" };
 }
 
 /** Arrow keys move. Enter toggles. Enter on the Submit row finishes, unless a required list is empty. */

@@ -30,24 +30,35 @@ test("initial selection follows option order", () => {
   expect(initialPickerState(agents, ["codex", "claude"], true).selected).toEqual(["claude", "codex"]);
 });
 
+test("a chosen answer starts highlighted on Submit", () => {
+  expect(initialPickerState(scope, ["global"], false).cursor).toBe(scope.length);
+  expect(initialPickerState(agents, ["codex"], true).cursor).toBe(agents.length);
+});
+
+test("nothing chosen starts on the first option", () => {
+  expect(initialPickerState(agents, [], true).cursor).toBe(0);
+});
+
 test("arrows move the highlight and leave the selection alone", () => {
   const start = initialPickerState(agents, ["claude", "cursor"], true);
-  const down = press(start, "down", agents, true, true);
-  expect(down.done).toBe(false);
-  expect(down.state.cursor).toBe(1);
-  expect(down.state.selected).toEqual(["claude", "cursor"]);
-  expect(press(start, "up", agents, true, true).state.cursor).toBe(0);
+  const up = press(start, "up", agents, true, true);
+  expect(up.done).toBe(false);
+  expect(up.state.cursor).toBe(agents.length - 1);
+  expect(up.state.selected).toEqual(["claude", "cursor"]);
+  expect(press(start, "down", agents, true, true).state.cursor).toBe(agents.length);
 });
 
 test("arrows stop at the ends", () => {
   let state = initialPickerState(agents, ["claude"], true);
-  for (let i = 0; i < 6; i++) state = press(state, "down", agents, true, true).state;
-  expect(state.cursor).toBe(agents.length);
   expect(press(state, "down", agents, true, true).state.cursor).toBe(agents.length);
+  for (let i = 0; i < 6; i++) state = press(state, "up", agents, true, true).state;
+  expect(state.cursor).toBe(0);
+  expect(press(state, "up", agents, true, true).state.cursor).toBe(0);
 });
 
 test("enter toggles a multi-select option and a second enter clears it", () => {
-  const start = initialPickerState(agents, ["claude"], true);
+  let start = initialPickerState(agents, ["claude"], true);
+  for (let i = 0; i < agents.length; i++) start = press(start, "up", agents, true, true).state;
   const cleared = press(start, "enter", agents, true, true);
   expect(cleared.done).toBe(false);
   expect(cleared.state.selected).toEqual([]);
@@ -67,7 +78,7 @@ test("selecting out of order still stores option order", () => {
 
 test("enter on a single choice moves the selection and cannot clear it", () => {
   let state = initialPickerState(scope, ["project"], false);
-  state = press(state, "down", scope, false, false).state;
+  state = press(state, "up", scope, false, false).state;
   const moved = press(state, "enter", scope, false, false);
   expect(moved.done).toBe(false);
   expect(moved.state.selected).toEqual(["global"]);
@@ -76,7 +87,8 @@ test("enter on a single choice moves the selection and cannot clear it", () => {
 
 test("moving onto a single choice does not select it", () => {
   let state = initialPickerState(scope, ["project"], false);
-  state = press(state, "down", scope, false, false).state;
+  state = press(state, "up", scope, false, false).state;
+  expect(state.selected).toEqual(["project"]);
   state = press(state, "down", scope, false, false).state;
   const done = press(state, "enter", scope, false, false);
   expect(state.cursor).toBe(scope.length);
@@ -110,10 +122,10 @@ test("the active frame shows the header, the stepper, the highlight, the marks, 
   expect(lines[0]).toBe("▁▁▁▁ magnitude   skills for Claude Code, Cursor and Codex");
   expect(lines[2]).toBe("● agents ── ○ location ── ○ skills ── ○ review");
   expect(lines).toContain("Which agents do you use?");
-  expect(lines).toContain("▌ ■ Claude Code   found .claude/");
+  expect(lines).toContain("  ■ Claude Code   found .claude/");
   expect(lines).toContain("  ■ Cursor        found .cursor/");
   expect(lines).toContain("  □ Codex         found .agents/");
-  expect(lines).toContain("   Submit ");
+  expect(lines).toContain("▌  Submit ");
   expect(lines[lines.length - 1]).toContain("Submit continues");
   const blocked = press({ ...state, cursor: agents.length, selected: [] }, "enter", agents, true, true);
   const error = plainLines(
@@ -142,7 +154,7 @@ test("a single choice uses a radio mark", () => {
 test("a hint that does not fit the terminal is dropped", () => {
   const state = initialPickerState(scope, ["project"], false);
   const lines = plainLines(renderPicker({ message: "Where?", options: scope, state, multiple: false, phase: "active", step: 1, columns: 47 }));
-  expect(lines).toContain("▌ ● This project   shared with the team via git");
+  expect(lines).toContain("  ● This project   shared with the team via git");
   expect(lines).toContain("  ○ Global");
 });
 
