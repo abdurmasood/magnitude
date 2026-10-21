@@ -111,7 +111,7 @@ async function install({ log, flags, roots }: RunContext, answers: Answers, plan
   }
   const review = reviewEntries(plan, writes, roots, files, plan.removals);
   if (flags.yes) printAll(log, reviewLines(plan, writes, roots, files, plan.removals));
-  else if (!unlessCancelled(await askConfirm(review.entries, review.fileCount))) throw new Cancelled();
+  else if (!unlessCancelled(await askConfirm(review.entries, review.fileCount, !asksDecisions(flags, conflicts)))) throw new Cancelled();
   applyWrites(writes);
   applyFileWrites(files);
   applyRemovals(plan.removals.map((removal) => removal.dest));
@@ -204,12 +204,14 @@ function warningLine(warning: DuplicateWarning, roots: Roots): string {
   return `${agents} will also load ${displayPath(`${warning.folder}${sep}${warning.skill}`, roots)}`;
 }
 
+function asksDecisions(flags: Flags, conflicts: Conflict[]): boolean {
+  return conflicts.length > 0 && !flags.replace && !flags.keepExisting && !flags.yes;
+}
+
 async function chooseDecisions(flags: Flags, conflicts: Conflict[]): Promise<Record<string, Decision>> {
-  if (conflicts.length === 0) return {};
-  const all = (decision: Decision) => Object.fromEntries(conflicts.map((write) => [write.dest, decision]));
-  if (flags.replace) return all("replace");
-  if (flags.keepExisting || flags.yes) return all("keep");
-  return unlessCancelled(await askDecisions(conflicts));
+  if (asksDecisions(flags, conflicts)) return unlessCancelled(await askDecisions(conflicts));
+  const decision: Decision = flags.replace ? "replace" : "keep";
+  return Object.fromEntries(conflicts.map((write) => [write.dest, decision]));
 }
 
 function nothingToWrite(conflicts: { dest: string }[], decisions: Record<string, Decision>): string {

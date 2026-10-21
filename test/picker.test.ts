@@ -1,6 +1,6 @@
 import { PassThrough } from "node:stream";
 import { stripVTControlCharacters as plain } from "node:util";
-import { expect, test } from "vitest";
+import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import {
   initialPickerState,
   pick,
@@ -10,6 +10,7 @@ import {
   type PickerOption,
   type PickerState,
 } from "../src/picker.js";
+import { RISE_FRAME_MS, setColorDepth } from "../src/theme.js";
 
 const agents: PickerOption<string>[] = [
   { value: "claude", label: "Claude Code", hint: "found .claude/" },
@@ -102,11 +103,12 @@ test("submit with nothing selected stays put", () => {
 
 const plainLines = (frame: string) => plain(frame).split("\n");
 
-test("the active frame shows the stepper, the highlight, the marks, and Submit", () => {
+test("the active frame shows the header, the stepper, the highlight, the marks, and Submit", () => {
   const state = initialPickerState(agents, ["claude", "cursor"], true);
   const frame = renderPicker({ message: "Which agents do you use?", options: agents, state, multiple: true, phase: "active", step: 0, columns: 80 });
   const lines = plainLines(frame);
-  expect(lines[0]).toBe("● agents ── ○ location ── ○ skills ── ○ review");
+  expect(lines[0]).toBe("▁▁▁▁ magnitude   skills for Claude Code, Cursor and Codex");
+  expect(lines[2]).toBe("● agents ── ○ location ── ○ skills ── ○ review");
   expect(lines).toContain("Which agents do you use?");
   expect(lines).toContain("▌ ■ Claude Code   found .claude/");
   expect(lines).toContain("  ■ Cursor        found .cursor/");
@@ -175,4 +177,60 @@ test("pick moves back over the line clack leaves after an empty frame", async ()
   const tail = written.slice(written.lastIndexOf("\x1b[J"));
   expect(tail.split("\n")).toHaveLength(2);
   expect(tail.endsWith("\x1b[1A")).toBe(true);
+});
+
+describe("the current step's bar rises on a terminal", () => {
+  const savedCI = process.env.CI;
+  const wait = (ms: number) => new Promise((done) => setTimeout(done, ms));
+  const SETTLED = RISE_FRAME_MS * 8;
+
+  beforeEach(() => {
+    delete process.env.CI;
+    setColorDepth(24);
+  });
+  afterEach(() => {
+    setColorDepth(undefined);
+    if (savedCI === undefined) delete process.env.CI;
+    else process.env.CI = savedCI;
+  });
+
+  function terminal() {
+    const input = new PassThrough();
+    const output = Object.assign(new PassThrough(), { isTTY: true });
+    const seen = { written: "" };
+    output.on("data", (chunk: Buffer) => (seen.written += chunk.toString()));
+    return { input, output, seen };
+  }
+
+  test("draws each height on the way up, then settles", async () => {
+    const { input, output, seen } = terminal();
+    const answer = pick({ message: "Where?", options: scope, initial: ["project"], multiple: false, step: 1, input, output });
+    await wait(SETTLED);
+    const text = plain(seen.written);
+    for (const bars of ["▁▁▁▁", "▁▂▁▁", "▁▃▁▁", "▁▄▁▁"]) expect(text).toContain(`${bars} magnitude`);
+    expect(text.lastIndexOf("▁▃▁▁ magnitude")).toBeGreaterThan(text.lastIndexOf("▁▄▁▁ magnitude"));
+    input.write("\x1b[B\x1b[B\r");
+    expect(await answer).toEqual(["project"]);
+  });
+
+  test("submitting mid-rise leaves nothing drawn after the erased frame", async () => {
+    const { input, output, seen } = terminal();
+    const answer = pick({ message: "Where?", options: scope, initial: ["project"], multiple: false, step: 3, input, output });
+    input.write("\x1b[B\x1b[B\r");
+    expect(await answer).toEqual(["project"]);
+    await wait(SETTLED);
+    expect(plain(seen.written)).not.toContain("▁▃▅█ magnitude");
+    expect(seen.written.endsWith("\x1b[1A")).toBe(true);
+  });
+
+  test("a repeat question on the same step shows the bar already up", async () => {
+    const { input, output, seen } = terminal();
+    const answer = pick({ message: "Where?", options: scope, initial: ["project"], multiple: false, step: 1, rise: false, input, output });
+    await wait(SETTLED);
+    const text = plain(seen.written);
+    expect(text).toContain("▁▃▁▁ magnitude");
+    expect(text).not.toContain("▁▄▁▁ magnitude");
+    input.write("\x1b[B\x1b[B\r");
+    expect(await answer).toEqual(["project"]);
+  });
 });
