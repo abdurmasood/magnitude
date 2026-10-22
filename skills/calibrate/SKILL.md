@@ -19,13 +19,13 @@ Audit the conversation so far — the feature AND your own behavior — against 
 
 1. Reread the whole conversation from the first message. If context was compacted, say early details may be missing.
 2. If no feature or change has been discussed, say there is nothing to calibrate and stop.
-3. If `/calibrate` ran earlier in this conversation, mark each earlier gap as closed (quote the answer) or still open.
+3. If `/calibrate` ran earlier in this conversation, open the report with one line naming the earlier questions now answered, by their old numbers. Questions still open go back in the list.
 4. Run every required check below.
 5. Write the report in the exact structure below, then stop.
 
 ## Required Checks
 
-Each check appears in the report, either as a gap or under **Settled** with a quote.
+Run every check. Only gaps appear in the report. Checks that pass are not listed, except as the one **Agreed** line in a READY report.
 
 **Part 1 — The feature**
 - Scope: what is in, and what is explicitly out
@@ -43,34 +43,49 @@ Each check appears in the report, either as a gap or under **Settled** with a qu
 
 ## Report
 
+Group findings by who acts, not by check:
+- A gap in the feature → a question for the user.
+- A choice you made silently, an addition the user didn't ask for, agreement without raising a trade-off, or a question you moved past → a question for the user, in your own voice: "I suggested --json for CI. You didn't ask for it. Keep it or drop it?"
+- A claim about the codebase you made without reading the code → **I'll fix before planning**, naming what you will read.
+
+When anything blocks:
+
 ```
-CALIBRATION — <feature in a few words>
-Verdict: READY | NOT READY (<n> blocking)
+**NOT READY**: <what blocks, e.g. "3 questions block this">
 
-Part 1 — The feature
-  1. [<guideline>] [blocking|minor] <gap>
-     evidence: "<quote from the conversation>"
-     question: <question for the user>
+1. <blocking question>
+2. <blocking question>
 
-Part 2 — Claude's behavior
-  1. [<guideline>] [blocking|minor] <slip>
-     evidence: "<quote of Claude's own words>"
-     fix: <what must happen, e.g. read X to verify, or user decides Y>
+**Worth deciding** (won't block)
+3. <minor question>
 
-Settled
-  - <decision> — "<quote where the user stated or agreed to it>"
+**I'll fix before planning**
+- <unverified claim, and what you will read to check it>
 
-Weakest point: <the single biggest risk, even when READY>
-
-Next: <answer the questions above, then run /calibrate again> | <Ready.>
+Reply by number, e.g. "<short sample answers>", then run /calibrate again.
 ```
+
+When nothing blocks:
+
+```
+**READY**: <what is agreed, in a few words>
+
+Agreed: <decision> · <decision> · <decision>
+
+Biggest risk: <the single biggest risk>
+```
+
+Leave out any section that would be empty.
 
 ## Rules
 
-- Every item quotes the conversation. No quote, no item.
+- Every item must trace to something said in the conversation. If you can't point to it, drop it.
+- Don't print quotes. The exception is when the exact wording is the gap: then quote just those words.
 - "Sounds good" settles only what was explicitly stated, not what was implied.
 - Blocking = would change what gets built or how it is verified. Everything else is minor.
-- READY only with zero blocking items.
+- READY only when no question blocks and nothing is listed under **I'll fix before planning**.
+- Write each question so it can be answered in a few words.
 - Raise alternatives as questions. The user decides; calibrate never picks a design.
 - Report only: no plan, no code, no file reads, no offer to implement.
-- The `Next:` line is the last line of the response.
+- Write the report as markdown, not inside a code block.
+- The last line of the response is the `Reply by number` line, or `Biggest risk` when READY.
