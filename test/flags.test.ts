@@ -47,6 +47,12 @@ describe("parseFlags", () => {
   test("unknown command and extra positionals are usage errors", () => {
     expect(() => parse("frobnicate")).toThrow(UsageError);
     expect(() => parse("init", "extra")).toThrow(UsageError);
+    expect(() => parse("update", "extra")).toThrow(UsageError);
+  });
+
+  test("update takes no options", () => {
+    expect(parse("update").command).toBe("update");
+    expect(() => parse("update", "--yes")).toThrow(UsageError);
   });
 
   test("help and version commands", () => {

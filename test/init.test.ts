@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join, relative, resolve } from "node:path";
 import { beforeEach, expect, test } from "vitest";
 import { runInit, type InitOptions } from "../src/init.js";
+import { readLedger } from "../src/ledger.js";
 import { CODEX_MANUAL_YAML } from "../src/plan.js";
 import { CURSOR_GLOBAL_NOTE, loadPrinciplesBody, upsertPrinciples } from "../src/principles.js";
 
@@ -78,9 +79,35 @@ test("--global writes under home, not cwd", async () => {
     ".claude/skills/auto-skill/SKILL.md",
     ".claude/skills/manual-skill/SKILL.md",
     ".claude/skills/manual-skill/references/notes.md",
+    ".magnitude/installs.json",
   ]);
   expect(exists(cwd, ".claude")).toBe(false);
   expect(exists(cwd, "AGENTS.md")).toBe(false);
+  expect(readLedger(home).installs[0]?.root).toBe(home);
+});
+
+test("init records selected skills and a later init keeps the earlier ones", async () => {
+  const argv = ["init", "--yes", "--agents", "claude"];
+  expect(await runInit({ ...base, argv: [...argv, "--skills", "auto-skill"] })).toBe(0);
+  expect(await runInit({ ...base, argv: [...argv, "--skills", "manual-skill"] })).toBe(0);
+  expect(readLedger(home)).toEqual({
+    installs: [{
+      root: cwd,
+      skills: [
+        { name: "auto-skill", dest: join(cwd, ".claude/skills/auto-skill") },
+        { name: "manual-skill", dest: join(cwd, ".claude/skills/manual-skill") },
+      ],
+    }],
+  });
+});
+
+test("a kept skill is still recorded", async () => {
+  const dest = join(cwd, ".claude/skills/auto-skill");
+  mkdirSync(dest, { recursive: true });
+  writeFileSync(join(dest, "SKILL.md"), "mine");
+  expect(await runInit({ ...base, argv: ["init", "--yes", "--agents", "claude", "--skills", "auto-skill"] })).toBe(0);
+  expect(readFileSync(join(dest, "SKILL.md"), "utf8")).toBe("mine");
+  expect(readLedger(home).installs).toEqual([{ root: cwd, skills: [{ name: "auto-skill", dest }] }]);
 });
 
 test("an existing different skill is kept by default with --yes, replaced with --replace", async () => {
@@ -202,6 +229,7 @@ test("an unknown skill name returns 2 with the valid names", async () => {
 test("--help prints usage and returns 0 even without a terminal", async () => {
   expect(await runInit({ ...base, argv: ["--help"] })).toBe(0);
   expect(lines.join("\n")).toContain("magnitude init [--agents claude,cursor,codex]");
+  expect(lines.join("\n")).toContain("magnitude update");
 });
 
 test("project scope writes AGENTS.md and does not create CLAUDE.md", async () => {
