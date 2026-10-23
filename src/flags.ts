@@ -2,7 +2,7 @@ import { parseArgs } from "node:util";
 import type { AgentId, Answers } from "./types.js";
 
 export interface Flags {
-  command: "init" | "help" | "version";
+  command: "init" | "help" | "version" | "update";
   agents?: AgentId[];
   skills?: string[] | "all";
   global: boolean;
@@ -68,14 +68,23 @@ function pickCommand(help: boolean, version: boolean, positionals: string[]): Fl
   if (help) return "help";
   if (version) return "version";
   if (positionals.length === 0) return "help";
-  if (positionals[0] !== "init") throw new UsageError(`Unknown command: ${positionals[0]}`);
   if (positionals.length > 1) throw new UsageError(`Unexpected argument: ${positionals[1]}`);
-  return "init";
+  const name = positionals[0];
+  if (name === "init" || name === "update") return name;
+  throw new UsageError(`Unknown command: ${name}`);
 }
 
 export function parseFlags(argv: string[], validSkills: string[]): Flags {
   const { values, positionals } = readArgs(argv);
   const command = pickCommand(values.help === true, values.version === true, positionals);
+  const hasUpdateOption =
+    values.agents !== undefined ||
+    values.skills !== undefined ||
+    values.global === true ||
+    values.replace === true ||
+    values["keep-existing"] === true ||
+    values.yes === true;
+  if (command === "update" && hasUpdateOption) throw new UsageError("magnitude update takes no options");
   if (values.replace && values["keep-existing"]) {
     throw new UsageError("--replace and --keep-existing cannot be used together");
   }

@@ -3,11 +3,23 @@ import { dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { detectAgents, findProjectRoot, scanPresence, scanSkills, type Detection } from "./detect.js";
 import { parseFlags, resolveNonInteractive, UsageError, type Flags } from "./flags.js";
+import { recordInstalls } from "./ledger.js";
 import { buildPlan, folderPath, foldersReadBy, resolveInstructions, resolveWrites, targetFolders, type PrinciplesContext } from "./plan.js";
 import { firstClaudeInstruction, loadLegacySkill, loadPrinciplesBody, principleDestinations } from "./principles.js";
 import { askAnswers, askConfirm, askDecisions, type Conflict } from "./prompts.js";
 import { isMissing, loadSkills, readFilesRecursive } from "./skills.js";
 import type { AgentId, Answers, Decision, DuplicateWarning, FileMap, Plan, Roots, Scan, Skill, SkillWrite } from "./types.js";
+import {
+  APPLY_ENV,
+  applyRecordedSkills,
+  currentPackagePath,
+  defaultHasPackageJson,
+  fetchLatestVersion,
+  installPackage,
+  reexecApply,
+  runUpdate,
+  type UpdateHooks,
+} from "./update.js";
 import { AGENT_NAMES, applyFileWrites, applyRemovals, applyWrites, displayPath, finishedLines, nextStepLines, reviewEntries, reviewLines } from "./write.js";
 
 export interface InitOptions {
@@ -19,12 +31,15 @@ export interface InitOptions {
   log: (line: string) => void;
   /** Usage errors, refusals and cancellation; cli.ts sends these to stderr. */
   error: (line: string) => void;
+  /** Injected by tests so update never talks to the network or a package manager. */
+  update?: UpdateHooks;
 }
 
 const USAGE = [
   "Usage:",
   "  magnitude init [--agents claude,cursor,codex] [--skills all|name,name]",
   "                 [--global] [--replace | --keep-existing] [--yes]",
+  "  magnitude update",
   "  magnitude --help | --version",
   "",
   "Options:",
@@ -69,6 +84,7 @@ async function run(opts: InitOptions): Promise<number> {
   const flags = parseFlags(opts.argv, skills.map((skill) => skill.name));
   if (flags.command === "help") return printAll(opts.log, USAGE);
   if (flags.command === "version") return printAll(opts.log, [readVersion()]);
+  if (flags.command === "update") return runUpdateCommand(opts);
   if (!opts.interactive && !flags.yes) {
     opts.error(NOT_A_TERMINAL);
     return 1;
@@ -100,6 +116,10 @@ interface RunContext {
 }
 
 async function install({ log, logOnce, flags, roots }: RunContext, answers: Answers, plan: Plan): Promise<number | "back"> {
+  const remember = () => {
+    const root = answers.scope === "global" ? roots.home : roots.project;
+    recordInstalls(roots.home, root, plan.writes.map((write) => ({ name: write.skill, dest: write.dest })));
+  };
   for (const note of plan.notes) logOnce(note);
   const label = (dest: string) => displayPath(dest, roots);
   const conflicts: Conflict[] = [
@@ -127,6 +147,7 @@ async function install({ log, logOnce, flags, roots }: RunContext, answers: Answ
     };
     if (writes.length === 0 && files.length === 0 && plan.removals.length === 0) {
       reportKept();
+      remember();
       return printAll(log, [nothingToWrite(conflicts, decisions)]);
     }
     const review = reviewEntries(plan, writes, roots, files, plan.removals);
@@ -150,9 +171,25 @@ async function install({ log, logOnce, flags, roots }: RunContext, answers: Answ
     applyWrites(writes);
     applyFileWrites(files);
     applyRemovals(plan.removals.map((removal) => removal.dest));
+    remember();
     if (flags.yes) return printAll(log, nextStepLines(answers.agents, answers.skills));
     return printAll(log, finishedLines(review.fileCount, answers.agents, answers.skills));
   }
+}
+
+async function runUpdateCommand(opts: InitOptions): Promise<number> {
+  if (process.env[APPLY_ENV] === "1") return applyRecordedSkills(opts.home, opts.skillsDir, opts.log);
+  const hooks = opts.update;
+  return runUpdate({
+    packagePath: hooks?.packagePath ?? currentPackagePath(),
+    currentVersion: hooks?.currentVersion ?? readVersion(),
+    latest: hooks?.latest ?? fetchLatestVersion,
+    install: hooks?.install ?? installPackage,
+    apply: hooks?.apply ?? reexecApply,
+    hasPackageJson: hooks?.hasPackageJson ?? defaultHasPackageJson,
+    log: opts.log,
+    error: opts.error,
+  });
 }
 
 function printAll(log: InitOptions["log"], lines: string[]): number {
