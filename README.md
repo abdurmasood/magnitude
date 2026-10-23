@@ -37,6 +37,7 @@ npx @magnitudeai/cli init
 | `slice-commits` | Splits a finished working tree into small, readable commits on the right branches, then pushes                       | When you call it |
 | `open-pr`       | Opens a pull request with a conventional title and a short What / Why body                                           | When you call it |
 | `merge-prs`     | Merges pull requests into main, including stacked sets, or closes them                                               | When you call it |
+| `compress`      | Rewrites answers so the verdict comes first, with numbered follow-ups for the rest, and keeps that shape all session | When you call it |
 
 
 Call a skill with `/name` in Claude Code and Cursor, or `$name` in Codex.
