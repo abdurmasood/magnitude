@@ -57,7 +57,7 @@ describe("loadSkills", () => {
 
   test("loads the real bundled skills", () => {
     expect(loadSkills("skills").map((s) => s.name)).toEqual([
-      "calibrate", "merge-prs", "open-pr", "slice-commits",
+      "calibrate", "compress", "merge-prs", "open-pr", "slice-commits",
     ]);
   });
 });
