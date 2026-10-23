@@ -22,6 +22,12 @@ npm i -g @magnitudeai/cli
 magnitude init
 ```
 
+Update that global install, and refresh Magnitude skills in projects where you have already run `magnitude init`:
+
+```
+magnitude update
+```
+
 Or set up in project (no CLI left behind):
 
 ```
