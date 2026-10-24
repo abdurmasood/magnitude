@@ -1,11 +1,11 @@
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, relative, resolve } from "node:path";
 import { beforeEach, expect, test } from "vitest";
 import { runInit, type InitOptions } from "../src/init.js";
 import { readLedger } from "../src/ledger.js";
 import { CODEX_MANUAL_YAML } from "../src/plan.js";
-import { CURSOR_GLOBAL_NOTE, loadPrinciplesBody, upsertPrinciples } from "../src/principles.js";
+import { loadPrinciplesBody, upsertPrinciples } from "../src/principles.js";
 
 const skillsDir = resolve("test/fixtures/skills");
 const temp = (label: string) => mkdtempSync(join(tmpdir(), `magnitude-init-${label}-`));
@@ -188,23 +188,29 @@ test("a plain file at a skill name is a conflict: kept by default, replaced with
   expect(tree(join(cwd, ".claude/skills"))).toEqual(["manual-skill/SKILL.md", "manual-skill/references/notes.md"]);
 });
 
-test("second run prints 'Everything is already up to date.' and writes nothing", async () => {
+test("second run prints '✓ Up to date. Nothing to write.' and writes nothing", async () => {
   const argv = ["init", "--yes", "--agents", "claude"];
   expect(await runInit({ ...base, argv })).toBe(0);
   const skillMd = join(cwd, ".claude/skills/auto-skill/SKILL.md");
   const before = statSync(skillMd).mtimeMs;
   lines = [];
   expect(await runInit({ ...base, argv })).toBe(0);
-  expect(lines).toEqual(["Everything is already up to date."]);
+  expect(lines).toEqual(["✓ Up to date. Nothing to write."]);
   expect(statSync(skillMd).mtimeMs).toBe(before);
 });
 
-test("warns when a chosen skill already exists in another folder a ticked agent reads", async () => {
+test("warns when a chosen skill differs in another folder a ticked agent reads", async () => {
   mkdirSync(join(cwd, ".agents/skills/auto-skill"), { recursive: true });
   writeFileSync(join(cwd, ".agents/skills/auto-skill/SKILL.md"), "other");
   expect(await runInit({ ...base, argv: ["init", "--yes", "--agents", "claude,cursor"] })).toBe(0);
-  expect(lines).toContain("Cursor will also load .agents/skills/auto-skill");
+  expect(lines).toContain("▲ .agents/skills/auto-skill differs from magnitude's. Cursor will load both.");
   expect(readFileSync(join(cwd, ".agents/skills/auto-skill/SKILL.md"), "utf8")).toBe("other");
+});
+
+test("an identical copy in another folder a ticked agent reads gives no warning", async () => {
+  cpSync(join(skillsDir, "auto-skill"), join(cwd, ".agents/skills/auto-skill"), { recursive: true });
+  expect(await runInit({ ...base, argv: ["init", "--yes", "--agents", "claude,cursor"] })).toBe(0);
+  expect(lines.filter((line) => line.includes(".agents/skills/auto-skill"))).toEqual([]);
 });
 
 test("non-interactive without --yes returns 1 and writes nothing", async () => {
@@ -280,13 +286,27 @@ test("global Claude and Codex write their home files", async () => {
   expect(readFileSync(join(home, ".codex", "AGENTS.md"), "utf8")).toContain("# Coding Principles");
 });
 
-test("global Cursor writes no principles file, warns, and still installs the skill", async () => {
+test("global Cursor writes no principles file, still installs the skill, and points at the bundled principles", async () => {
   expect(await runInit({ ...base, argv: ["init", "--yes", "--agents", "cursor", "--global", "--skills", "auto-skill"] })).toBe(0);
   expect(exists(home, ".agents/skills/auto-skill/SKILL.md")).toBe(true);
   expect(exists(home, "AGENTS.md")).toBe(false);
   expect(exists(home, ".claude/CLAUDE.md")).toBe(false);
   expect(exists(home, ".codex/AGENTS.md")).toBe(false);
-  expect(lines).toContain(CURSOR_GLOBAL_NOTE);
+  expect(lines.slice(-4)).toEqual([
+    "▲ Cursor won't get the coding principles. It has no global rules file.",
+    `  Paste them from ${resolve("instructions/coding-principles.md")} into Cursor Settings › Rules › User Rules.`,
+    "",
+    "Cursor: /auto-skill",
+  ]);
+});
+
+test("global Claude and Cursor point the note at ~/.claude/CLAUDE.md and a second run prints only the up-to-date line", async () => {
+  const argv = ["init", "--yes", "--agents", "claude,cursor", "--global"];
+  expect(await runInit({ ...base, argv })).toBe(0);
+  expect(lines).toContain("  Paste them from ~/.claude/CLAUDE.md into Cursor Settings › Rules › User Rules.");
+  lines = [];
+  expect(await runInit({ ...base, argv })).toBe(0);
+  expect(lines).toEqual(["✓ Up to date. Nothing to write."]);
 });
 
 test("an identical old coding-principles skill is removed and an edited one is kept", async () => {

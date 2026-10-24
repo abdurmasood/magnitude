@@ -1,8 +1,9 @@
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { readdirSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse } from "yaml";
-import type { FileMap, Skill } from "./types.js";
+import { readFilesRecursive } from "./disk.js";
+import type { Skill } from "./types.js";
 
 /** The name becomes a destination folder, so it must be a plain, safe path segment. */
 const SKILL_NAME = /^[a-z0-9-]+$/;
@@ -11,31 +12,6 @@ const FRONTMATTER = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/;
 /** Resolves the bundled skills folder relative to the built dist/cli.js (or src/skills.ts). */
 export function bundledSkillsDir(): string {
   return resolve(dirname(fileURLToPath(import.meta.url)), "..", "skills");
-}
-
-const MISSING_CODES = new Set(["ENOENT", "ENOTDIR", "ELOOP"]);
-
-/** True for errors meaning "nothing usable is there": missing entry, broken or looping symlink. */
-export function isMissing(error: unknown): boolean {
-  return error instanceof Error && MISSING_CODES.has((error as NodeJS.ErrnoException).code ?? "");
-}
-
-export function readFilesRecursive(root: string, prefix = ""): FileMap {
-  const files: FileMap = {};
-  for (const entry of readdirSync(join(root, prefix), { withFileTypes: true })) {
-    const relative = prefix ? `${prefix}/${entry.name}` : entry.name;
-    const full = join(root, relative);
-    let stats;
-    try {
-      stats = statSync(full); // follows symlinks
-    } catch (error) {
-      if (isMissing(error)) continue; // broken or looping symlink
-      throw error;
-    }
-    if (stats.isDirectory()) Object.assign(files, readFilesRecursive(root, relative));
-    else if (stats.isFile()) files[relative] = readFileSync(full, "utf8");
-  }
-  return files;
 }
 
 function parseSkill(folder: string, dir: string): Skill {

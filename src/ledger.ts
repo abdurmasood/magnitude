@@ -1,6 +1,6 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { isMissing } from "./skills.js";
+import { isMissing } from "./disk.js";
 
 export interface RecordedSkill {
   name: string;

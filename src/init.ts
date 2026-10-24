@@ -1,13 +1,16 @@
 import { readFileSync, statSync } from "node:fs";
 import { dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { detectAgents, findProjectRoot, scanPresence, scanSkills, type Detection } from "./detect.js";
+import { AGENT_NAMES, displayPath, finishedLines, nextStepLines, reviewEntries, reviewLines } from "./copy.js";
+import { detectAgents, findProjectRoot, scanCopies, scanSkills, type Detection } from "./detect.js";
+import { applyFileWrites, applyRemovals, applyWrites, isMissing, readFilesRecursive } from "./disk.js";
 import { parseFlags, resolveNonInteractive, UsageError, type Flags } from "./flags.js";
 import { recordInstalls } from "./ledger.js";
 import { buildPlan, folderPath, foldersReadBy, resolveInstructions, resolveWrites, targetFolders, type PrinciplesContext } from "./plan.js";
-import { firstClaudeInstruction, loadLegacySkill, loadPrinciplesBody, principleDestinations } from "./principles.js";
+import { firstClaudeInstruction, loadLegacySkill, loadPrinciplesBody, principleDestinations, principlesFile } from "./principles.js";
 import { askAnswers, askConfirm, askDecisions, type Conflict } from "./prompts.js";
-import { isMissing, loadSkills, readFilesRecursive } from "./skills.js";
+import { loadSkills } from "./skills.js";
+import { foreground } from "./theme.js";
 import type { AgentId, Answers, Decision, DuplicateWarning, FileMap, Plan, Roots, Scan, Skill, SkillWrite } from "./types.js";
 import {
   APPLY_ENV,
@@ -20,7 +23,6 @@ import {
   runUpdate,
   type UpdateHooks,
 } from "./update.js";
-import { AGENT_NAMES, applyFileWrites, applyRemovals, applyWrites, displayPath, finishedLines, nextStepLines, reviewEntries, reviewLines } from "./write.js";
 
 export interface InitOptions {
   argv: string[];
@@ -109,7 +111,7 @@ async function run(opts: InitOptions): Promise<number> {
 
 interface RunContext {
   log: InitOptions["log"];
-  /** Warnings and notes. The same line is not printed again when review goes back. */
+  /** Warnings and kept legacy skills. The same line is not printed again when review goes back. */
   logOnce: (line: string) => void;
   flags: Flags;
   roots: Roots;
@@ -120,7 +122,7 @@ async function install({ log, logOnce, flags, roots }: RunContext, answers: Answ
     const root = answers.scope === "global" ? roots.home : roots.project;
     recordInstalls(roots.home, root, plan.writes.map((write) => ({ name: write.skill, dest: write.dest })));
   };
-  for (const note of plan.notes) logOnce(note);
+  for (const dest of plan.kept) logOnce(legacyKeptLine(dest, roots));
   const label = (dest: string) => displayPath(dest, roots);
   const conflicts: Conflict[] = [
     ...plan.writes.filter((write) => write.status === "conflict").map((write) => ({ dest: write.dest, label: label(write.dest) })),
@@ -172,6 +174,7 @@ async function install({ log, logOnce, flags, roots }: RunContext, answers: Answ
     applyFileWrites(files);
     applyRemovals(plan.removals.map((removal) => removal.dest));
     remember();
+    if (plan.cursorPrinciplesSource) printAll(log, cursorNoteLines(plan.cursorPrinciplesSource, roots));
     if (flags.yes) return printAll(log, nextStepLines(answers.agents, answers.skills));
     return printAll(log, finishedLines(review.fileCount, answers.agents, answers.skills));
   }
@@ -215,17 +218,21 @@ async function chooseAnswers(flags: Flags, detected: Detection, skills: Skill[],
 }
 
 /**
- * Only the chosen skills: full contents in the target folders (compared with ours), presence only in
- * every other folder a ticked agent reads (for duplicate warnings). Unrelated user skills are never read.
+ * Only the chosen skills: full contents in the target folders (compared with ours), and in every other
+ * folder a ticked agent reads (for duplicate warnings). Unrelated user skills are never read.
  */
 function scanFor(answers: Answers, roots: Roots): Scan {
   const targets = targetFolders(answers.agents).map((folder) => folderPath(folder, answers.scope, roots));
   const others = answers.agents.flatMap((agent) => foldersReadBy(agent, roots)).filter((folder) => !targets.includes(folder));
-  return { ...scanPresence([...new Set(others)], answers.skills), ...scanSkills(targets, answers.skills) };
+  return { ...scanCopies([...new Set(others)], answers.skills), ...scanSkills(targets, answers.skills) };
 }
 
 function keptLine(write: SkillWrite, roots: Roots): string {
   return `Kept ${displayPath(write.dest, roots)} (differs from ours; use --replace to overwrite)`;
+}
+
+function legacyKeptLine(dest: string, roots: Roots): string {
+  return `Kept ${displayPath(dest, roots)} (old coding-principles skill was edited; remove it yourself)`;
 }
 
 function instructionKeptLine(dest: string, roots: Roots): string {
@@ -269,12 +276,21 @@ function principlesFor(answers: Answers, roots: Roots): PrinciplesContext {
     const found = readLegacy(dest);
     if (found) legacySkills[dest] = found;
   }
-  return { body: loadPrinciplesBody(), claudeFile, files, legacy: loadLegacySkill(), legacySkills };
+  return { body: loadPrinciplesBody(), bodyFile: principlesFile(), claudeFile, files, legacy: loadLegacySkill(), legacySkills };
 }
 
 function warningLine(warning: DuplicateWarning, roots: Roots): string {
   const agents = warning.agents.map((agent) => AGENT_NAMES[agent]).join(" and ");
-  return `${agents} will also load ${displayPath(`${warning.folder}${sep}${warning.skill}`, roots)}`;
+  const path = displayPath(`${warning.folder}${sep}${warning.skill}`, roots);
+  return foreground("yellow", `▲ ${path} differs from magnitude's. ${agents} will load both.`);
+}
+
+function cursorNoteLines(source: string, roots: Roots): string[] {
+  return [
+    foreground("yellow", "▲ Cursor won't get the coding principles. It has no global rules file."),
+    `  Paste them from ${displayPath(source, roots)} into Cursor Settings › Rules › User Rules.`,
+    "",
+  ];
 }
 
 function asksDecisions(flags: Flags, conflicts: Conflict[]): boolean {
@@ -307,5 +323,6 @@ async function chooseDecisions(
 
 function nothingToWrite(conflicts: { dest: string }[], decisions: Record<string, Decision>): string {
   const kept = conflicts.filter((write) => decisions[write.dest] !== "replace").length;
-  return kept === 0 ? "Everything is already up to date." : `Nothing to write. Kept ${kept} existing skill(s).`;
+  const check = foreground("green", "✓");
+  return kept === 0 ? `${check} Up to date. Nothing to write.` : `${check} Nothing to write. Kept ${kept} existing skill(s).`;
 }

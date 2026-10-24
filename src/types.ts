@@ -19,7 +19,10 @@ export interface Plan {
   warnings: DuplicateWarning[];
   instructions: InstructionWrite[];
   removals: SkillRemoval[];
-  notes: string[];
+  /** Absolute dests of edited legacy coding-principles skills left on disk. */
+  kept: string[];
+  /** Global + Cursor only: where to copy the principles from, since Cursor has no global rules file. */
+  cursorPrinciplesSource?: string;
 }
 export type Decision = "replace" | "keep";
 export interface FinalWrite { dest: string; files: FileMap; mode: "create" | "replace" }

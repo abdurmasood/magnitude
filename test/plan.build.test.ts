@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { CURSOR_GLOBAL_NOTE, upsertPrinciples } from "../src/principles.js";
+import { upsertPrinciples } from "../src/principles.js";
 import { buildPlan, expectedFiles, folderPath, foldersReadBy, resolveInstructions, resolveWrites, type PrinciplesContext } from "../src/plan.js";
 import type { Plan, Roots, Scan, Skill } from "../src/types.js";
 
@@ -91,7 +91,7 @@ describe("buildPlan statuses", () => {
 });
 
 describe("buildPlan warnings", () => {
-  test("warns about same-name skills in folders a ticked agent reads but we don't write", () => {
+  test("warns about a different same-name skill in a folder a ticked agent reads but we don't write", () => {
     const scan: Scan = { "/p/.agents/skills": { "auto-skill": { "SKILL.md": "x" } } };
     const plan = buildPlan({ agents: ["claude", "cursor"], scope: "project", skills: ["auto-skill"] }, skills, roots, scan);
     expect(plan.warnings).toEqual([{ skill: "auto-skill", folder: "/p/.agents/skills", agents: ["cursor"] }]);
@@ -104,9 +104,30 @@ describe("buildPlan warnings", () => {
     };
     const plan = buildPlan({ agents: ["claude", "cursor"], scope: "project", skills: ["auto-skill"] }, skills, roots, scan);
     expect(plan.warnings).toEqual([
-      { skill: "auto-skill", folder: "/h/.claude/skills", agents: ["claude", "cursor"] },
       { skill: "auto-skill", folder: "/p/.cursor/skills", agents: ["cursor"] },
+      { skill: "auto-skill", folder: "/h/.claude/skills", agents: ["claude", "cursor"] },
     ]);
+  });
+
+  test("an identical copy gives no warning, line endings ignored", () => {
+    const scan: Scan = {
+      "/p/.agents/skills": { "auto-skill": { "SKILL.md": "line1\r\nline2\r\n" } },
+      "/h/.cursor/skills": { "auto-skill": auto.files },
+    };
+    const plan = buildPlan({ agents: ["claude", "cursor"], scope: "project", skills: ["auto-skill"] }, skills, roots, scan);
+    expect(plan.warnings).toEqual([]);
+  });
+
+  test("a manual-only .agents/skills copy with openai.yaml gives no warning", () => {
+    const scan: Scan = { "/p/.agents/skills": { "manual-skill": expectedFiles(manual, ".agents/skills") } };
+    const plan = buildPlan({ agents: ["claude", "cursor"], scope: "project", skills: ["manual-skill"] }, skills, roots, scan);
+    expect(plan.warnings).toEqual([]);
+  });
+
+  test("never warns about folders no ticked agent reads", () => {
+    const scan: Scan = { "/p/.cursor/skills": { "auto-skill": { "SKILL.md": "x" } } };
+    const plan = buildPlan({ agents: ["claude"], scope: "project", skills: ["auto-skill"] }, skills, roots, scan);
+    expect(plan.warnings).toEqual([]);
   });
 
   test("never warns about skills that were not chosen or about target folders", () => {
@@ -133,6 +154,7 @@ describe("buildPlan principles", () => {
   const body = "Rule\n";
   const context = (files: Record<string, string>, legacySkills: PrinciplesContext["legacySkills"] = {}): PrinciplesContext => ({
     body,
+    bodyFile: "/pkg/coding-principles.md",
     files,
     legacy: { "SKILL.md": "shipped\n" },
     legacySkills,
@@ -164,11 +186,19 @@ describe("buildPlan principles", () => {
     expect(plan.instructions[0].text).not.toContain("old");
   });
 
-  test("global Cursor sets the note and writes no principles file", () => {
+  test("global Cursor points the note at the bundled file and writes no principles file", () => {
     const plan = buildPlan({ agents: ["cursor"], scope: "global", skills: ["auto-skill"] }, skills, roots, {}, context({}));
-    expect(plan.notes).toEqual([CURSOR_GLOBAL_NOTE]);
+    expect(plan.cursorPrinciplesSource).toBe("/pkg/coding-principles.md");
+    expect(plan.kept).toEqual([]);
     expect(plan.instructions).toEqual([]);
     expect(plan.writes[0].dest).toBe("/h/.agents/skills/auto-skill");
+  });
+
+  test("global Claude and Cursor point the note at ~/.claude/CLAUDE.md; project scope has no note", () => {
+    const global = buildPlan({ agents: ["claude", "cursor"], scope: "global", skills: [] }, skills, roots, {}, context({}));
+    expect(global.cursorPrinciplesSource).toBe("/h/.claude/CLAUDE.md");
+    const project = buildPlan({ agents: ["cursor"], scope: "project", skills: [] }, skills, roots, {}, context({}));
+    expect(project.cursorPrinciplesSource).toBeUndefined();
   });
 
   test("an identical old skill is removed and an edited one is reported", () => {
@@ -177,7 +207,7 @@ describe("buildPlan principles", () => {
     expect(same.removals).toEqual([{ dest }]);
     const edited = buildPlan({ agents: ["claude"], scope: "project", skills: [] }, skills, roots, {}, context({}, { [dest]: { "SKILL.md": "mine\n" } }));
     expect(edited.removals).toEqual([]);
-    expect(edited.notes).toEqual(["Kept .claude/skills/coding-principles (old coding-principles skill was edited; remove it yourself)"]);
+    expect(edited.kept).toEqual([dest]);
   });
 });
 
@@ -185,7 +215,7 @@ describe("resolveInstructions", () => {
   const plan: Plan = {
     writes: [],
     warnings: [],
-    notes: [],
+    kept: [],
     removals: [],
     instructions: [
       { dest: "/p/AGENTS.md", status: "new", text: "new" },

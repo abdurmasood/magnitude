@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { readFilesRecursive } from "./skills.js";
+import { readFilesRecursive } from "./disk.js";
 import type { AgentId, FileMap, Roots, Scope } from "./types.js";
 
 /** Bundled instructions folder. dist/cli.js and src/principles.ts both sit one level below the package root. */
@@ -9,8 +9,12 @@ export function instructionsDir(): string {
   return resolve(dirname(fileURLToPath(import.meta.url)), "..", "instructions");
 }
 
+export function principlesFile(dir = instructionsDir()): string {
+  return join(dir, "coding-principles.md");
+}
+
 export function loadPrinciplesBody(dir = instructionsDir()): string {
-  return readFileSync(join(dir, "coding-principles.md"), "utf8");
+  return readFileSync(principlesFile(dir), "utf8");
 }
 
 export function loadLegacySkill(dir = instructionsDir()): FileMap {
@@ -19,9 +23,6 @@ export function loadLegacySkill(dir = instructionsDir()): FileMap {
 
 const START = "<!-- magnitude:coding-principles -->";
 const END = "<!-- /magnitude:coding-principles -->";
-
-export const CURSOR_GLOBAL_NOTE =
-  "Cursor has no global rules file. Pick This project, or paste the principles into Settings, then Rules, then User Rules.";
 
 const CLAUDE_INSTRUCTION_FILES = ["CLAUDE.md", ".claude/CLAUDE.md", "CLAUDE.local.md"];
 
