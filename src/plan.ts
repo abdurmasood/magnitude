@@ -100,19 +100,18 @@ function buildWrites(answers: Answers, chosen: Skill[], roots: Roots, scan: Scan
   });
 }
 
+/** Copies in other folders a ticked agent reads. A missing or identical copy is silent: only "conflict" warns. */
 function buildWarnings(answers: Answers, chosen: Skill[], roots: Roots, scan: Scan): DuplicateWarning[] {
   const targets = new Set(targetFolders(answers.agents).map((folder) => folderPath(folder, answers.scope, roots)));
-  const ticked = AGENT_ORDER.filter((agent) => answers.agents.includes(agent));
-  const readBy = new Map(ticked.map((agent) => [agent, foldersReadBy(agent, roots)]));
-  const folders = [...new Set([...readBy.values()].flat())].filter((folder) => !targets.has(folder));
-  return folders.flatMap((folder) =>
-    chosen
-      .filter((skill) => scan[folder]?.[skill.name])
-      .map((skill) => ({
-        skill: skill.name,
-        folder,
-        agents: ticked.filter((agent) => readBy.get(agent)!.includes(folder)),
-      })),
+  return [...new Set([roots.project, roots.home])].flatMap((root) =>
+    ALL_FOLDERS.flatMap((key) => {
+      const folder = join(root, key);
+      const agents = readersOf(key, answers.agents);
+      if (targets.has(folder) || agents.length === 0) return [];
+      return chosen
+        .filter((skill) => statusOf(scan[folder]?.[skill.name], expectedFiles(skill, key)) === "conflict")
+        .map((skill) => ({ skill: skill.name, folder, agents }));
+    }),
   );
 }
 

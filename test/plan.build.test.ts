@@ -91,7 +91,7 @@ describe("buildPlan statuses", () => {
 });
 
 describe("buildPlan warnings", () => {
-  test("warns about same-name skills in folders a ticked agent reads but we don't write", () => {
+  test("warns about a different same-name skill in a folder a ticked agent reads but we don't write", () => {
     const scan: Scan = { "/p/.agents/skills": { "auto-skill": { "SKILL.md": "x" } } };
     const plan = buildPlan({ agents: ["claude", "cursor"], scope: "project", skills: ["auto-skill"] }, skills, roots, scan);
     expect(plan.warnings).toEqual([{ skill: "auto-skill", folder: "/p/.agents/skills", agents: ["cursor"] }]);
@@ -104,9 +104,30 @@ describe("buildPlan warnings", () => {
     };
     const plan = buildPlan({ agents: ["claude", "cursor"], scope: "project", skills: ["auto-skill"] }, skills, roots, scan);
     expect(plan.warnings).toEqual([
-      { skill: "auto-skill", folder: "/h/.claude/skills", agents: ["claude", "cursor"] },
       { skill: "auto-skill", folder: "/p/.cursor/skills", agents: ["cursor"] },
+      { skill: "auto-skill", folder: "/h/.claude/skills", agents: ["claude", "cursor"] },
     ]);
+  });
+
+  test("an identical copy gives no warning, line endings ignored", () => {
+    const scan: Scan = {
+      "/p/.agents/skills": { "auto-skill": { "SKILL.md": "line1\r\nline2\r\n" } },
+      "/h/.cursor/skills": { "auto-skill": auto.files },
+    };
+    const plan = buildPlan({ agents: ["claude", "cursor"], scope: "project", skills: ["auto-skill"] }, skills, roots, scan);
+    expect(plan.warnings).toEqual([]);
+  });
+
+  test("a manual-only .agents/skills copy with openai.yaml gives no warning", () => {
+    const scan: Scan = { "/p/.agents/skills": { "manual-skill": expectedFiles(manual, ".agents/skills") } };
+    const plan = buildPlan({ agents: ["claude", "cursor"], scope: "project", skills: ["manual-skill"] }, skills, roots, scan);
+    expect(plan.warnings).toEqual([]);
+  });
+
+  test("never warns about folders no ticked agent reads", () => {
+    const scan: Scan = { "/p/.cursor/skills": { "auto-skill": { "SKILL.md": "x" } } };
+    const plan = buildPlan({ agents: ["claude"], scope: "project", skills: ["auto-skill"] }, skills, roots, scan);
+    expect(plan.warnings).toEqual([]);
   });
 
   test("never warns about skills that were not chosen or about target folders", () => {

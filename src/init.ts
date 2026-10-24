@@ -2,7 +2,7 @@ import { readFileSync, statSync } from "node:fs";
 import { dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { AGENT_NAMES, displayPath, finishedLines, nextStepLines, reviewEntries, reviewLines } from "./copy.js";
-import { detectAgents, findProjectRoot, scanPresence, scanSkills, type Detection } from "./detect.js";
+import { detectAgents, findProjectRoot, scanCopies, scanSkills, type Detection } from "./detect.js";
 import { applyFileWrites, applyRemovals, applyWrites, isMissing, readFilesRecursive } from "./disk.js";
 import { parseFlags, resolveNonInteractive, UsageError, type Flags } from "./flags.js";
 import { recordInstalls } from "./ledger.js";
@@ -10,6 +10,7 @@ import { buildPlan, folderPath, foldersReadBy, resolveInstructions, resolveWrite
 import { firstClaudeInstruction, loadLegacySkill, loadPrinciplesBody, principleDestinations } from "./principles.js";
 import { askAnswers, askConfirm, askDecisions, type Conflict } from "./prompts.js";
 import { loadSkills } from "./skills.js";
+import { foreground } from "./theme.js";
 import type { AgentId, Answers, Decision, DuplicateWarning, FileMap, Plan, Roots, Scan, Skill, SkillWrite } from "./types.js";
 import {
   APPLY_ENV,
@@ -216,13 +217,13 @@ async function chooseAnswers(flags: Flags, detected: Detection, skills: Skill[],
 }
 
 /**
- * Only the chosen skills: full contents in the target folders (compared with ours), presence only in
- * every other folder a ticked agent reads (for duplicate warnings). Unrelated user skills are never read.
+ * Only the chosen skills: full contents in the target folders (compared with ours), and in every other
+ * folder a ticked agent reads (for duplicate warnings). Unrelated user skills are never read.
  */
 function scanFor(answers: Answers, roots: Roots): Scan {
   const targets = targetFolders(answers.agents).map((folder) => folderPath(folder, answers.scope, roots));
   const others = answers.agents.flatMap((agent) => foldersReadBy(agent, roots)).filter((folder) => !targets.includes(folder));
-  return { ...scanPresence([...new Set(others)], answers.skills), ...scanSkills(targets, answers.skills) };
+  return { ...scanCopies([...new Set(others)], answers.skills), ...scanSkills(targets, answers.skills) };
 }
 
 function keptLine(write: SkillWrite, roots: Roots): string {
@@ -275,7 +276,8 @@ function principlesFor(answers: Answers, roots: Roots): PrinciplesContext {
 
 function warningLine(warning: DuplicateWarning, roots: Roots): string {
   const agents = warning.agents.map((agent) => AGENT_NAMES[agent]).join(" and ");
-  return `${agents} will also load ${displayPath(`${warning.folder}${sep}${warning.skill}`, roots)}`;
+  const path = displayPath(`${warning.folder}${sep}${warning.skill}`, roots);
+  return foreground("yellow", `▲ ${path} differs from magnitude's. ${agents} will load both.`);
 }
 
 function asksDecisions(flags: Flags, conflicts: Conflict[]): boolean {

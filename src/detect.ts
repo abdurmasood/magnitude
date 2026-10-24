@@ -94,7 +94,19 @@ export function scanSkills(folders: string[], names: string[]): Scan {
   return scanNamed(folders, names, (path) => (isDirectory(path) ? readFilesRecursive(path) : {}));
 }
 
-/** Other folders: only whether each named skill is there, without reading it. */
-export function scanPresence(folders: string[], names: string[]): Scan {
-  return scanNamed(folders, names, () => ({}));
+const DENIED_CODES = new Set(["EACCES", "EPERM"]);
+
+/** A copy in a folder magnitude doesn't own. Unreadable is {}: it can't crash init, and it compares as different. */
+function readCopy(path: string): Scan[string][string] {
+  try {
+    return isDirectory(path) ? readFilesRecursive(path) : {};
+  } catch (error) {
+    if (error instanceof Error && DENIED_CODES.has((error as NodeJS.ErrnoException).code ?? "")) return {};
+    throw error;
+  }
+}
+
+/** Other folders: reads each named skill too, so only a copy that differs from ours is warned about. */
+export function scanCopies(folders: string[], names: string[]): Scan {
+  return scanNamed(folders, names, readCopy);
 }

@@ -142,7 +142,7 @@ test("going back from confirm asks the answers again and does not repeat a warni
   expect(vi.mocked(askAnswers)).toHaveBeenCalledTimes(2);
   expect(vi.mocked(askAnswers).mock.calls[1][4]).toEqual({ resume: answers });
   expect(vi.mocked(askConfirm)).toHaveBeenCalledTimes(2);
-  expect(lines.filter((line) => line.includes("will also load"))).toEqual(["Cursor will also load .agents/skills/auto-skill"]);
+  expect(lines.filter((line) => line.includes("will load both"))).toEqual(["▲ .agents/skills/auto-skill differs from magnitude's. Cursor will load both."]);
   expect(existsSync(join(cwd, ".claude/skills/manual-skill/SKILL.md"))).toBe(true);
 });
 

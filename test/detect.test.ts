@@ -2,7 +2,7 @@ import { chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync }
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import { detectAgents, findProjectRoot, scanPresence, scanSkills } from "../src/detect.js";
+import { detectAgents, findProjectRoot, scanCopies, scanSkills } from "../src/detect.js";
 
 let tmp: string;
 beforeEach(() => {
@@ -184,18 +184,33 @@ describe("scanSkills", () => {
   });
 });
 
-describe("scanPresence", () => {
-  test("records named entries of any type as {} without reading them", () => {
+describe("scanCopies", () => {
+  test("reads the files of each named skill, skipping missing folders and names", () => {
     const folder = join(tmp, "skills");
-    mkdirSync(join(folder, "alpha"), { recursive: true });
-    writeFileSync(join(folder, "alpha", "secret"), "s");
-    chmodSync(join(folder, "alpha", "secret"), 0o000);
-    writeFileSync(join(folder, "beta"), "file");
-    symlinkSync(join(tmp, "nowhere"), join(folder, "gamma"));
+    mkdirSync(join(folder, "alpha", "references"), { recursive: true });
+    writeFileSync(join(folder, "alpha", "SKILL.md"), "A");
+    writeFileSync(join(folder, "alpha", "references", "notes.md"), "N");
     mkdirSync(join(folder, "unrelated"));
     const missing = join(tmp, "missing");
-    expect(scanPresence([folder, missing], ["alpha", "beta", "gamma", "delta"])).toEqual({
-      [folder]: { alpha: {}, beta: {}, gamma: {} },
+    expect(scanCopies([folder, missing], ["alpha", "delta"])).toEqual({
+      [folder]: { alpha: { "SKILL.md": "A", "references/notes.md": "N" } },
     });
+  });
+
+  test("records an unreadable copy as {} instead of throwing", () => {
+    const folder = join(tmp, "skills");
+    mkdirSync(join(folder, "alpha"), { recursive: true });
+    writeFileSync(join(folder, "alpha", "SKILL.md"), "A");
+    writeFileSync(join(folder, "alpha", "secret"), "s");
+    chmodSync(join(folder, "alpha", "secret"), 0o000);
+    expect(scanCopies([folder], ["alpha"])).toEqual({ [folder]: { alpha: {} } });
+  });
+
+  test("records a plain file or a broken link as {}", () => {
+    const folder = join(tmp, "skills");
+    mkdirSync(folder);
+    writeFileSync(join(folder, "beta"), "file");
+    symlinkSync(join(tmp, "nowhere"), join(folder, "gamma"));
+    expect(scanCopies([folder], ["beta", "gamma"])).toEqual({ [folder]: { beta: {}, gamma: {} } });
   });
 });

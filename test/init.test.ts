@@ -1,4 +1,4 @@
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, relative, resolve } from "node:path";
 import { beforeEach, expect, test } from "vitest";
@@ -199,12 +199,18 @@ test("second run prints 'Everything is already up to date.' and writes nothing",
   expect(statSync(skillMd).mtimeMs).toBe(before);
 });
 
-test("warns when a chosen skill already exists in another folder a ticked agent reads", async () => {
+test("warns when a chosen skill differs in another folder a ticked agent reads", async () => {
   mkdirSync(join(cwd, ".agents/skills/auto-skill"), { recursive: true });
   writeFileSync(join(cwd, ".agents/skills/auto-skill/SKILL.md"), "other");
   expect(await runInit({ ...base, argv: ["init", "--yes", "--agents", "claude,cursor"] })).toBe(0);
-  expect(lines).toContain("Cursor will also load .agents/skills/auto-skill");
+  expect(lines).toContain("▲ .agents/skills/auto-skill differs from magnitude's. Cursor will load both.");
   expect(readFileSync(join(cwd, ".agents/skills/auto-skill/SKILL.md"), "utf8")).toBe("other");
+});
+
+test("an identical copy in another folder a ticked agent reads gives no warning", async () => {
+  cpSync(join(skillsDir, "auto-skill"), join(cwd, ".agents/skills/auto-skill"), { recursive: true });
+  expect(await runInit({ ...base, argv: ["init", "--yes", "--agents", "claude,cursor"] })).toBe(0);
+  expect(lines.filter((line) => line.includes(".agents/skills/auto-skill"))).toEqual([]);
 });
 
 test("non-interactive without --yes returns 1 and writes nothing", async () => {
