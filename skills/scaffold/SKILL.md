@@ -1,0 +1,95 @@
+---
+name: scaffold
+description: Use when the user has agreed what to build and wants the module boundaries, interfaces, and folder layout decided before planning or implementation.
+disable-model-invocation: true
+---
+
+# Scaffold
+
+Decide where the code lives and how the parts connect. This is a gate after `/calibrate` and before any plan or code exists: report, then stop.
+
+Build the structure for the future. Build the features for now.
+
+## The Rubric
+
+1. **Expensive now** — how the system splits into parts, the interfaces between them, which of those are a stable public contract, the folder layout, where tests live.
+2. **Cheap later** — extra features, config options, plugin systems. Do not add them until they're needed.
+3. **Not this skill** — speculative features, configurability, plugin registries, CI, contributor docs. Those clash with Simplicity First.
+4. **Follow the house** — in an existing repo, put new code where that responsibility already lives. Do not invent a parallel layout.
+
+## Process
+
+1. Restate the job in a few sentences: what it does, inputs, outputs, what is out of scope. If something blocking is unclear, ask and stop.
+2. Name the distinct responsibilities. Each becomes a module. No module reads another's internals.
+3. Define the interfaces between them: signatures, data shapes, errors. Mark each public/stable or internal.
+4. Read the existing tree, then propose the folder layout. Show where the new code goes. No catch-all `utils`.
+5. Describe the thinnest end-to-end working version, then the next steps as small ordered increments, each with a verify check.
+6. Write the report in the exact structure below, then stop.
+
+## Scale
+
+- A small change: brief report. Place the code in the module that already owns that responsibility. Skip a new tree.
+- A new system, or a change that crosses modules: full report.
+- If `/scaffold` ran earlier in this conversation, open with one line naming what changed since, then rewrite the report.
+
+## Report
+
+When something blocking is unclear:
+
+```
+**NOT READY**: <what blocks>
+
+1. <blocking question>
+2. <blocking question>
+
+Reply by number, e.g. "<short sample answers>", then run /scaffold again.
+```
+
+When the structure is proposed:
+
+```
+**PROPOSED**: <what is being structured, in a few words>
+
+**Job**
+<what it does, inputs, outputs, out of scope. A few sentences.>
+
+**Modules**
+- <name> — <one responsibility>
+- <name> — <one responsibility>
+
+**Interfaces**
+- <signature or data shape> — public | internal
+- <error> — public | internal
+
+**Layout**
+<indented tree, or where the new files go in the existing tree>
+
+**Walking skeleton**
+1. <step> → verify: <check>
+2. <step> → verify: <check>
+
+**Next increments**
+3. <step> → verify: <check>
+4. <step> → verify: <check>
+
+**Likely later** (not built now)
+- <need> — would plug in at <module or interface>
+
+Approve this structure, or reply with changes and run /scaffold again.
+```
+
+Leave out any section that would be empty. For a small change, keep Job, Layout, and Walking skeleton. Drop the rest if they add nothing.
+
+## Rules
+
+- Report only: no implementation plan beyond the increments, no code, no files written, no offer to implement.
+- Reading the existing tree is required. Writing to it is not.
+- Do not invent features, config, plugins, CI, or contributor docs "while we're here".
+- Public means callers outside this change will depend on it. Everything else is internal.
+- A module that needs another module's internals is the wrong split. Redraw it.
+- `utils`, `helpers`, and `common` are not modules. Put code with the responsibility that owns it.
+- In an existing repo, the existing tree wins. Show insertions, not a redesign, unless the current layout cannot hold the new responsibility.
+- Each increment is independently verifiable: a test, a command, an observable result.
+- **Likely later** names the hook, not the implementation. If you cannot name where it plugs in, drop it.
+- Write the report as markdown, not inside a code block.
+- The last line of the response is the approval line, or the `Reply by number` line when NOT READY.
