@@ -9,8 +9,12 @@ export function instructionsDir(): string {
   return resolve(dirname(fileURLToPath(import.meta.url)), "..", "instructions");
 }
 
+export function principlesFile(dir = instructionsDir()): string {
+  return join(dir, "coding-principles.md");
+}
+
 export function loadPrinciplesBody(dir = instructionsDir()): string {
-  return readFileSync(join(dir, "coding-principles.md"), "utf8");
+  return readFileSync(principlesFile(dir), "utf8");
 }
 
 export function loadLegacySkill(dir = instructionsDir()): FileMap {
@@ -19,9 +23,6 @@ export function loadLegacySkill(dir = instructionsDir()): FileMap {
 
 const START = "<!-- magnitude:coding-principles -->";
 const END = "<!-- /magnitude:coding-principles -->";
-
-export const CURSOR_GLOBAL_NOTE =
-  "Cursor has no global rules file. Pick This project, or paste the principles into Settings, then Rules, then User Rules.";
 
 const CLAUDE_INSTRUCTION_FILES = ["CLAUDE.md", ".claude/CLAUDE.md", "CLAUDE.local.md"];
 

@@ -5,7 +5,7 @@ import { beforeEach, expect, test } from "vitest";
 import { runInit, type InitOptions } from "../src/init.js";
 import { readLedger } from "../src/ledger.js";
 import { CODEX_MANUAL_YAML } from "../src/plan.js";
-import { CURSOR_GLOBAL_NOTE, loadPrinciplesBody, upsertPrinciples } from "../src/principles.js";
+import { loadPrinciplesBody, upsertPrinciples } from "../src/principles.js";
 
 const skillsDir = resolve("test/fixtures/skills");
 const temp = (label: string) => mkdtempSync(join(tmpdir(), `magnitude-init-${label}-`));
@@ -286,13 +286,27 @@ test("global Claude and Codex write their home files", async () => {
   expect(readFileSync(join(home, ".codex", "AGENTS.md"), "utf8")).toContain("# Coding Principles");
 });
 
-test("global Cursor writes no principles file, warns, and still installs the skill", async () => {
+test("global Cursor writes no principles file, still installs the skill, and points at the bundled principles", async () => {
   expect(await runInit({ ...base, argv: ["init", "--yes", "--agents", "cursor", "--global", "--skills", "auto-skill"] })).toBe(0);
   expect(exists(home, ".agents/skills/auto-skill/SKILL.md")).toBe(true);
   expect(exists(home, "AGENTS.md")).toBe(false);
   expect(exists(home, ".claude/CLAUDE.md")).toBe(false);
   expect(exists(home, ".codex/AGENTS.md")).toBe(false);
-  expect(lines).toContain(CURSOR_GLOBAL_NOTE);
+  expect(lines.slice(-4)).toEqual([
+    "▲ Cursor won't get the coding principles. It has no global rules file.",
+    `  Paste them from ${resolve("instructions/coding-principles.md")} into Cursor Settings › Rules › User Rules.`,
+    "",
+    "Cursor: /auto-skill",
+  ]);
+});
+
+test("global Claude and Cursor point the note at ~/.claude/CLAUDE.md and a second run prints only the up-to-date line", async () => {
+  const argv = ["init", "--yes", "--agents", "claude,cursor", "--global"];
+  expect(await runInit({ ...base, argv })).toBe(0);
+  expect(lines).toContain("  Paste them from ~/.claude/CLAUDE.md into Cursor Settings › Rules › User Rules.");
+  lines = [];
+  expect(await runInit({ ...base, argv })).toBe(0);
+  expect(lines).toEqual(["Everything is already up to date."]);
 });
 
 test("an identical old coding-principles skill is removed and an edited one is kept", async () => {

@@ -55,7 +55,7 @@ describe("reviewLines", () => {
     warnings: [],
     instructions: [],
     removals: [],
-    notes: [],
+    kept: [],
     writes: [
       sw("a", "/home/me/.claude/skills", ["claude", "cursor"]),
       sw("b", "/home/me/.claude/skills", ["claude", "cursor"]),
@@ -97,7 +97,7 @@ describe("reviewEntries", () => {
     warnings: [],
     instructions: [],
     removals: [{ dest: "/work/app/.claude/skills/coding-principles" }],
-    notes: [],
+    kept: [],
     writes: [{ skill: "a", folder: "/work/app/.claude/skills", dest: "/work/app/.claude/skills/a", files: {}, status: "new", readers: ["claude"] }],
   };
 

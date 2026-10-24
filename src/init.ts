@@ -7,7 +7,7 @@ import { applyFileWrites, applyRemovals, applyWrites, isMissing, readFilesRecurs
 import { parseFlags, resolveNonInteractive, UsageError, type Flags } from "./flags.js";
 import { recordInstalls } from "./ledger.js";
 import { buildPlan, folderPath, foldersReadBy, resolveInstructions, resolveWrites, targetFolders, type PrinciplesContext } from "./plan.js";
-import { firstClaudeInstruction, loadLegacySkill, loadPrinciplesBody, principleDestinations } from "./principles.js";
+import { firstClaudeInstruction, loadLegacySkill, loadPrinciplesBody, principleDestinations, principlesFile } from "./principles.js";
 import { askAnswers, askConfirm, askDecisions, type Conflict } from "./prompts.js";
 import { loadSkills } from "./skills.js";
 import { foreground } from "./theme.js";
@@ -111,7 +111,7 @@ async function run(opts: InitOptions): Promise<number> {
 
 interface RunContext {
   log: InitOptions["log"];
-  /** Warnings and notes. The same line is not printed again when review goes back. */
+  /** Warnings and kept legacy skills. The same line is not printed again when review goes back. */
   logOnce: (line: string) => void;
   flags: Flags;
   roots: Roots;
@@ -122,7 +122,7 @@ async function install({ log, logOnce, flags, roots }: RunContext, answers: Answ
     const root = answers.scope === "global" ? roots.home : roots.project;
     recordInstalls(roots.home, root, plan.writes.map((write) => ({ name: write.skill, dest: write.dest })));
   };
-  for (const note of plan.notes) logOnce(note);
+  for (const dest of plan.kept) logOnce(legacyKeptLine(dest, roots));
   const label = (dest: string) => displayPath(dest, roots);
   const conflicts: Conflict[] = [
     ...plan.writes.filter((write) => write.status === "conflict").map((write) => ({ dest: write.dest, label: label(write.dest) })),
@@ -174,6 +174,7 @@ async function install({ log, logOnce, flags, roots }: RunContext, answers: Answ
     applyFileWrites(files);
     applyRemovals(plan.removals.map((removal) => removal.dest));
     remember();
+    if (plan.cursorPrinciplesSource) printAll(log, cursorNoteLines(plan.cursorPrinciplesSource, roots));
     if (flags.yes) return printAll(log, nextStepLines(answers.agents, answers.skills));
     return printAll(log, finishedLines(review.fileCount, answers.agents, answers.skills));
   }
@@ -230,6 +231,10 @@ function keptLine(write: SkillWrite, roots: Roots): string {
   return `Kept ${displayPath(write.dest, roots)} (differs from ours; use --replace to overwrite)`;
 }
 
+function legacyKeptLine(dest: string, roots: Roots): string {
+  return `Kept ${displayPath(dest, roots)} (old coding-principles skill was edited; remove it yourself)`;
+}
+
 function instructionKeptLine(dest: string, roots: Roots): string {
   return `Kept ${displayPath(dest, roots)} (coding principles differ; use --replace to overwrite)`;
 }
@@ -271,13 +276,21 @@ function principlesFor(answers: Answers, roots: Roots): PrinciplesContext {
     const found = readLegacy(dest);
     if (found) legacySkills[dest] = found;
   }
-  return { body: loadPrinciplesBody(), claudeFile, files, legacy: loadLegacySkill(), legacySkills };
+  return { body: loadPrinciplesBody(), bodyFile: principlesFile(), claudeFile, files, legacy: loadLegacySkill(), legacySkills };
 }
 
 function warningLine(warning: DuplicateWarning, roots: Roots): string {
   const agents = warning.agents.map((agent) => AGENT_NAMES[agent]).join(" and ");
   const path = displayPath(`${warning.folder}${sep}${warning.skill}`, roots);
   return foreground("yellow", `▲ ${path} differs from magnitude's. ${agents} will load both.`);
+}
+
+function cursorNoteLines(source: string, roots: Roots): string[] {
+  return [
+    foreground("yellow", "▲ Cursor won't get the coding principles. It has no global rules file."),
+    `  Paste them from ${displayPath(source, roots)} into Cursor Settings › Rules › User Rules.`,
+    "",
+  ];
 }
 
 function asksDecisions(flags: Flags, conflicts: Conflict[]): boolean {
