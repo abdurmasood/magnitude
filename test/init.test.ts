@@ -188,14 +188,14 @@ test("a plain file at a skill name is a conflict: kept by default, replaced with
   expect(tree(join(cwd, ".claude/skills"))).toEqual(["manual-skill/SKILL.md", "manual-skill/references/notes.md"]);
 });
 
-test("second run prints 'Everything is already up to date.' and writes nothing", async () => {
+test("second run prints '✓ Up to date. Nothing to write.' and writes nothing", async () => {
   const argv = ["init", "--yes", "--agents", "claude"];
   expect(await runInit({ ...base, argv })).toBe(0);
   const skillMd = join(cwd, ".claude/skills/auto-skill/SKILL.md");
   const before = statSync(skillMd).mtimeMs;
   lines = [];
   expect(await runInit({ ...base, argv })).toBe(0);
-  expect(lines).toEqual(["Everything is already up to date."]);
+  expect(lines).toEqual(["✓ Up to date. Nothing to write."]);
   expect(statSync(skillMd).mtimeMs).toBe(before);
 });
 
@@ -306,7 +306,7 @@ test("global Claude and Cursor point the note at ~/.claude/CLAUDE.md and a secon
   expect(lines).toContain("  Paste them from ~/.claude/CLAUDE.md into Cursor Settings › Rules › User Rules.");
   lines = [];
   expect(await runInit({ ...base, argv })).toBe(0);
-  expect(lines).toEqual(["Everything is already up to date."]);
+  expect(lines).toEqual(["✓ Up to date. Nothing to write."]);
 });
 
 test("an identical old coding-principles skill is removed and an edited one is kept", async () => {

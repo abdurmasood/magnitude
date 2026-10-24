@@ -323,5 +323,6 @@ async function chooseDecisions(
 
 function nothingToWrite(conflicts: { dest: string }[], decisions: Record<string, Decision>): string {
   const kept = conflicts.filter((write) => decisions[write.dest] !== "replace").length;
-  return kept === 0 ? "Everything is already up to date." : `Nothing to write. Kept ${kept} existing skill(s).`;
+  const check = foreground("green", "✓");
+  return kept === 0 ? `${check} Up to date. Nothing to write.` : `${check} Nothing to write. Kept ${kept} existing skill(s).`;
 }
