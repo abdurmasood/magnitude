@@ -1,6 +1,6 @@
 import { existsSync, lstatSync, statSync, type Stats } from "node:fs";
 import { dirname, join } from "node:path";
-import { isMissing, readFilesRecursive } from "./skills.js";
+import { isMissing, readFilesRecursive } from "./disk.js";
 import type { AgentId, Scan } from "./types.js";
 
 /** Stats `path`, or undefined when it (or a link it follows) does not exist; any other error is rethrown. */

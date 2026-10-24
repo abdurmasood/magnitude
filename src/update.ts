@@ -2,9 +2,10 @@ import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { isMissing } from "./disk.js";
 import { readLedger } from "./ledger.js";
 import { expectedFiles } from "./plan.js";
-import { isMissing, loadSkills } from "./skills.js";
+import { loadSkills } from "./skills.js";
 import type { FileMap, FolderKey } from "./types.js";
 
 export type Manager = "npm" | "pnpm" | "bun";

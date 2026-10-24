@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { readFilesRecursive } from "./skills.js";
+import { readFilesRecursive } from "./disk.js";
 import type { AgentId, FileMap, Roots, Scope } from "./types.js";
 
 /** Bundled instructions folder. dist/cli.js and src/principles.ts both sit one level below the package root. */

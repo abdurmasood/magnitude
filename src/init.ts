@@ -2,12 +2,13 @@ import { readFileSync, statSync } from "node:fs";
 import { dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { detectAgents, findProjectRoot, scanPresence, scanSkills, type Detection } from "./detect.js";
+import { isMissing, readFilesRecursive } from "./disk.js";
 import { parseFlags, resolveNonInteractive, UsageError, type Flags } from "./flags.js";
 import { recordInstalls } from "./ledger.js";
 import { buildPlan, folderPath, foldersReadBy, resolveInstructions, resolveWrites, targetFolders, type PrinciplesContext } from "./plan.js";
 import { firstClaudeInstruction, loadLegacySkill, loadPrinciplesBody, principleDestinations } from "./principles.js";
 import { askAnswers, askConfirm, askDecisions, type Conflict } from "./prompts.js";
-import { isMissing, loadSkills, readFilesRecursive } from "./skills.js";
+import { loadSkills } from "./skills.js";
 import type { AgentId, Answers, Decision, DuplicateWarning, FileMap, Plan, Roots, Scan, Skill, SkillWrite } from "./types.js";
 import {
   APPLY_ENV,
