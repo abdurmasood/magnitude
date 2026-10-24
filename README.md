@@ -5,10 +5,10 @@ A set of skills for improving a code writing flow (driven by agents) by an order
 ## Workflow
 
 ```
-discuss ──► /calibrate ──► plan ──► implement ──► /slice-commits ──► /open-pr ──► /merge-prs
-                 │
-                 ▼
-       gate before building
+discuss ──► /calibrate ──► /scaffold ──► plan ──► implement ──► /slice-commits ──► /open-pr ──► /merge-prs
+                 │              │
+                 ▼              ▼
+       gate before building   structure before code
 ```
 
 `magnitude init` writes coding principles into `AGENTS.md`. When `CLAUDE.md` is already there, it appends the same text to that file too.
@@ -40,6 +40,7 @@ npx @magnitudeai/cli init
 | Skill           | What it does                                                                                                         | Runs             |
 | --------------- | -------------------------------------------------------------------------------------------------------------------- | ---------------- |
 | `calibrate`     | Rereads the conversation and reports what's unclear about the feature, and where the agent slipped, before you build | When you call it |
+| `scaffold`      | Decides where the code lives and how the parts connect, then stops for approval before any plan or code              | When you call it |
 | `slice-commits` | Splits a finished working tree into small, readable commits on the right branches, then pushes                       | When you call it |
 | `open-pr`       | Opens a pull request with a conventional title and a short What / Why body                                           | When you call it |
 | `merge-prs`     | Merges pull requests into main, including stacked sets, or closes them                                               | When you call it |
