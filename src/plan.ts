@@ -18,7 +18,7 @@ import type {
   SkillWrite,
   WriteStatus,
 } from "./types.js";
-import { displayPath } from "./write.js";
+import { displayPath } from "./copy.js";
 
 export interface PrinciplesContext {
   body: string;

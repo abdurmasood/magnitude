@@ -1,6 +1,6 @@
-import { readdirSync, readFileSync, statSync } from "node:fs";
-import { join } from "node:path";
-import type { FileMap } from "./types.js";
+import { mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import type { FileMap, FinalWrite } from "./types.js";
 
 const MISSING_CODES = new Set(["ENOENT", "ENOTDIR", "ELOOP"]);
 
@@ -25,4 +25,28 @@ export function readFilesRecursive(root: string, prefix = ""): FileMap {
     else if (stats.isFile()) files[relative] = readFileSync(full, "utf8");
   }
   return files;
+}
+
+export function applyFileWrites(writes: { dest: string; text: string }[]): void {
+  for (const write of writes) {
+    mkdirSync(dirname(write.dest), { recursive: true });
+    writeFileSync(write.dest, write.text, "utf8");
+  }
+}
+
+/** Unlinks the path itself. A symlink is removed without following it into the target. */
+export function applyRemovals(dests: string[]): void {
+  for (const dest of dests) rmSync(dest, { recursive: true, force: true });
+}
+
+export function applyWrites(writes: FinalWrite[]): void {
+  for (const write of writes) {
+    // rmSync unlinks a symlink itself and never follows it into the target.
+    if (write.mode === "replace") rmSync(write.dest, { recursive: true, force: true });
+    for (const [path, text] of Object.entries(write.files)) {
+      const file = join(write.dest, ...path.split("/"));
+      mkdirSync(dirname(file), { recursive: true });
+      writeFileSync(file, text, "utf8");
+    }
+  }
 }

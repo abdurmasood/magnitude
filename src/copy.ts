@@ -1,34 +1,9 @@
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
-import { dirname, join, relative, sep } from "node:path";
+import { relative, sep } from "node:path";
 import { styleText } from "node:util";
 import { DOCS_URL, foreground, headerLine, STEPS, stepperLine } from "./theme.js";
 import type { AgentId, FinalWrite, Plan, Roots, SkillRemoval } from "./types.js";
 
 export const AGENT_NAMES: Record<AgentId, string> = { claude: "Claude Code", cursor: "Cursor", codex: "Codex" };
-
-export function applyFileWrites(writes: { dest: string; text: string }[]): void {
-  for (const write of writes) {
-    mkdirSync(dirname(write.dest), { recursive: true });
-    writeFileSync(write.dest, write.text, "utf8");
-  }
-}
-
-/** Unlinks the path itself. A symlink is removed without following it into the target. */
-export function applyRemovals(dests: string[]): void {
-  for (const dest of dests) rmSync(dest, { recursive: true, force: true });
-}
-
-export function applyWrites(writes: FinalWrite[]): void {
-  for (const write of writes) {
-    // rmSync unlinks a symlink itself and never follows it into the target.
-    if (write.mode === "replace") rmSync(write.dest, { recursive: true, force: true });
-    for (const [path, text] of Object.entries(write.files)) {
-      const file = join(write.dest, ...path.split("/"));
-      mkdirSync(dirname(file), { recursive: true });
-      writeFileSync(file, text, "utf8");
-    }
-  }
-}
 
 /** Project paths relative to the project root, home paths under `~`, anything else unchanged. */
 export function displayPath(path: string, roots: Roots): string {

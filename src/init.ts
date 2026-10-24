@@ -1,8 +1,9 @@
 import { readFileSync, statSync } from "node:fs";
 import { dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+import { AGENT_NAMES, displayPath, finishedLines, nextStepLines, reviewEntries, reviewLines } from "./copy.js";
 import { detectAgents, findProjectRoot, scanPresence, scanSkills, type Detection } from "./detect.js";
-import { isMissing, readFilesRecursive } from "./disk.js";
+import { applyFileWrites, applyRemovals, applyWrites, isMissing, readFilesRecursive } from "./disk.js";
 import { parseFlags, resolveNonInteractive, UsageError, type Flags } from "./flags.js";
 import { recordInstalls } from "./ledger.js";
 import { buildPlan, folderPath, foldersReadBy, resolveInstructions, resolveWrites, targetFolders, type PrinciplesContext } from "./plan.js";
@@ -21,7 +22,6 @@ import {
   runUpdate,
   type UpdateHooks,
 } from "./update.js";
-import { AGENT_NAMES, applyFileWrites, applyRemovals, applyWrites, displayPath, finishedLines, nextStepLines, reviewEntries, reviewLines } from "./write.js";
 
 export interface InitOptions {
   argv: string[];
