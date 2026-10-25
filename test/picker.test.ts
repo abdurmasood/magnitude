@@ -12,8 +12,8 @@ import {
   type PickerKey,
   type PickerOption,
   type PickerState,
-} from "../src/picker.js";
-import { RISE_FRAME_MS, setColorDepth } from "../src/theme.js";
+} from "../src/ui/picker.js";
+import { RISE_FRAME_MS, setColorDepth } from "../src/ui/theme.js";
 
 const agents: PickerOption<string>[] = [
   { value: "claude", label: "Claude Code", hint: "found .claude/" },

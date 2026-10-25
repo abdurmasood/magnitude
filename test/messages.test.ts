@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 import { stripVTControlCharacters as plain } from "node:util";
-import { displayPath, finishedLines, nextStepLines, nextSteps, reviewEntries, reviewLines } from "../src/copy.js";
-import type { FinalWrite, Plan, Roots, SkillWrite } from "../src/types.js";
+import { displayPath, finishedLines, nextStepLines, nextSteps, reviewEntries, reviewLines } from "../src/ui/messages.js";
+import type { FinalWrite, Plan, Roots, SkillWrite } from "../src/install/types.js";
 
 describe("nextStepLines", () => {
   test("next step uses / for Claude and Cursor, $ for Codex, calibrate first", () => {

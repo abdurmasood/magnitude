@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
-import { upsertPrinciples } from "../src/principles.js";
-import { buildPlan, expectedFiles, folderPath, foldersReadBy, resolveInstructions, resolveWrites, type PrinciplesContext } from "../src/plan.js";
-import type { Plan, Roots, Scan, Skill } from "../src/types.js";
+import { upsertPrinciples } from "../src/install/principles.js";
+import { buildPlan, expectedFiles, folderPath, foldersReadBy, resolveInstructions, resolveWrites, type PrinciplesContext } from "../src/install/plan.js";
+import type { Plan, Roots, Scan, Skill } from "../src/install/types.js";
 
 const roots: Roots = { project: "/p", home: "/h" };
 const auto: Skill = { name: "auto-skill", description: "d", manualOnly: false, files: { "SKILL.md": "line1\nline2\n" } };

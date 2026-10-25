@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
-import { CODEX_MANUAL_YAML, expectedFiles, readersOf, targetFolders } from "../src/plan.js";
-import type { AgentId, FolderKey, Skill } from "../src/types.js";
+import { CODEX_MANUAL_YAML, expectedFiles, readersOf, targetFolders } from "../src/install/plan.js";
+import type { AgentId, FolderKey, Skill } from "../src/install/types.js";
 
 const RULE: [AgentId[], FolderKey[]][] = [
   [["claude"], [".claude/skills"]],

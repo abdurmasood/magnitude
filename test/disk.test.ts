@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFil
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
-import { applyFileWrites, applyRemovals, applyWrites } from "../src/disk.js";
+import { applyFileWrites, applyRemovals, applyWrites } from "../src/install/disk.js";
 
 const temp = () => mkdtempSync(join(tmpdir(), "magnitude-write-"));
 

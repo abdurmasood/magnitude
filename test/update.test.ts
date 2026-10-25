@@ -2,10 +2,10 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { beforeEach, expect, test } from "vitest";
-import { runInit, type InitOptions } from "../src/init.js";
-import { recordInstalls } from "../src/ledger.js";
-import { CODEX_MANUAL_YAML } from "../src/plan.js";
-import { applyRecordedSkills, type UpdateHooks } from "../src/update.js";
+import { runCommand, type CommandOptions } from "../src/commands/router.js";
+import { recordInstalls } from "../src/install/ledger.js";
+import { CODEX_MANUAL_YAML } from "../src/install/plan.js";
+import { applyRecordedSkills, type UpdateHooks } from "../src/commands/update.js";
 
 const skillsDir = resolve("test/fixtures/skills");
 const npmPath = "/usr/local/lib/node_modules/@magnitudeai/cli/dist/cli.js";
@@ -55,12 +55,12 @@ function hooks(packagePath: string, current: string, latest: string, install?: U
 }
 
 function run(update: UpdateHooks): Promise<number> {
-  const options: InitOptions = {
-    argv: ["update"], cwd, home, skillsDir, interactive: false, update,
+  const options: CommandOptions = {
+    argv: ["update"], cwd, home, skillsDir, packageRoot: resolve("."), interactive: false, update,
     log: (line) => lines.push(line),
     error: (line) => errors.push(line),
   };
-  return runInit(options);
+  return runCommand(options);
 }
 
 test("npm, pnpm, and bun paths choose that package manager", async () => {

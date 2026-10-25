@@ -1,5 +1,5 @@
 import { parseArgs } from "node:util";
-import type { AgentId, Answers } from "./types.js";
+import type { AgentId, Answers } from "../install/types.js";
 
 export interface Flags {
   command: "init" | "help" | "version" | "update";
