@@ -2,10 +2,10 @@ import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, rea
 import { tmpdir } from "node:os";
 import { join, relative, resolve } from "node:path";
 import { beforeEach, expect, test } from "vitest";
-import { runInit, type InitOptions } from "../src/init.js";
-import { readLedger } from "../src/ledger.js";
-import { CODEX_MANUAL_YAML } from "../src/plan.js";
-import { loadPrinciplesBody, upsertPrinciples } from "../src/principles.js";
+import { runCommand, type CommandOptions } from "../src/commands/router.js";
+import { readLedger } from "../src/install/ledger.js";
+import { CODEX_MANUAL_YAML } from "../src/install/plan.js";
+import { loadPrinciplesBody, upsertPrinciples } from "../src/install/principles.js";
 
 const skillsDir = resolve("test/fixtures/skills");
 const temp = (label: string) => mkdtempSync(join(tmpdir(), `magnitude-init-${label}-`));
@@ -14,7 +14,7 @@ let cwd: string;
 let home: string;
 let lines: string[];
 let errors: string[];
-let base: InitOptions;
+let base: CommandOptions;
 
 beforeEach(() => {
   cwd = temp("cwd");
@@ -23,7 +23,7 @@ beforeEach(() => {
   lines = [];
   errors = [];
   base = {
-    argv: [], cwd, home, skillsDir, interactive: false,
+    argv: [], cwd, home, skillsDir, packageRoot: resolve("."), interactive: false,
     log: (line) => lines.push(line),
     error: (line) => errors.push(line),
   };
@@ -48,7 +48,7 @@ const exists = (root: string, path: string) => existsSync(join(root, path));
 test("--yes with detected Claude + Cursor writes only .claude/skills", async () => {
   mkdirSync(join(cwd, ".claude"));
   mkdirSync(join(cwd, ".cursor"));
-  expect(await runInit({ ...base, argv: ["init", "--yes"] })).toBe(0);
+  expect(await runCommand({ ...base, argv: ["init", "--yes"] })).toBe(0);
   expect(tree(cwd)).toEqual([
     ".claude/skills/auto-skill/SKILL.md",
     ".claude/skills/manual-skill/SKILL.md",
@@ -60,7 +60,7 @@ test("--yes with detected Claude + Cursor writes only .claude/skills", async () 
 });
 
 test("Codex writes openai.yaml for manual-only skills", async () => {
-  expect(await runInit({ ...base, argv: ["init", "--yes", "--agents", "codex"] })).toBe(0);
+  expect(await runCommand({ ...base, argv: ["init", "--yes", "--agents", "codex"] })).toBe(0);
   expect(tree(cwd)).toEqual([
     ".agents/skills/auto-skill/SKILL.md",
     ".agents/skills/manual-skill/SKILL.md",
@@ -73,7 +73,7 @@ test("Codex writes openai.yaml for manual-only skills", async () => {
 });
 
 test("--global writes under home, not cwd", async () => {
-  expect(await runInit({ ...base, argv: ["init", "--yes", "--agents", "claude", "--global"] })).toBe(0);
+  expect(await runCommand({ ...base, argv: ["init", "--yes", "--agents", "claude", "--global"] })).toBe(0);
   expect(tree(home)).toEqual([
     ".claude/CLAUDE.md",
     ".claude/skills/auto-skill/SKILL.md",
@@ -88,8 +88,8 @@ test("--global writes under home, not cwd", async () => {
 
 test("init records selected skills and a later init keeps the earlier ones", async () => {
   const argv = ["init", "--yes", "--agents", "claude"];
-  expect(await runInit({ ...base, argv: [...argv, "--skills", "auto-skill"] })).toBe(0);
-  expect(await runInit({ ...base, argv: [...argv, "--skills", "manual-skill"] })).toBe(0);
+  expect(await runCommand({ ...base, argv: [...argv, "--skills", "auto-skill"] })).toBe(0);
+  expect(await runCommand({ ...base, argv: [...argv, "--skills", "manual-skill"] })).toBe(0);
   expect(readLedger(home)).toEqual({
     installs: [{
       root: cwd,
@@ -105,7 +105,7 @@ test("a kept skill is still recorded", async () => {
   const dest = join(cwd, ".claude/skills/auto-skill");
   mkdirSync(dest, { recursive: true });
   writeFileSync(join(dest, "SKILL.md"), "mine");
-  expect(await runInit({ ...base, argv: ["init", "--yes", "--agents", "claude", "--skills", "auto-skill"] })).toBe(0);
+  expect(await runCommand({ ...base, argv: ["init", "--yes", "--agents", "claude", "--skills", "auto-skill"] })).toBe(0);
   expect(readFileSync(join(dest, "SKILL.md"), "utf8")).toBe("mine");
   expect(readLedger(home).installs).toEqual([{ root: cwd, skills: [{ name: "auto-skill", dest }] }]);
 });
@@ -116,7 +116,7 @@ test("an existing different skill is kept by default with --yes, replaced with -
   writeFileSync(mine, "mine");
   const argv = ["init", "--yes", "--agents", "claude", "--skills", "auto-skill"];
 
-  expect(await runInit({ ...base, argv })).toBe(0);
+  expect(await runCommand({ ...base, argv })).toBe(0);
   expect(readFileSync(mine, "utf8")).toBe("mine");
   expect(lines).toEqual([
     "Kept .claude/skills/auto-skill (differs from ours; use --replace to overwrite)",
@@ -125,14 +125,14 @@ test("an existing different skill is kept by default with --yes, replaced with -
     "Claude Code: /auto-skill",
   ]);
 
-  expect(await runInit({ ...base, argv: [...argv, "--replace"] })).toBe(0);
+  expect(await runCommand({ ...base, argv: [...argv, "--replace"] })).toBe(0);
   expect(readFileSync(mine, "utf8")).toContain("name: auto-skill");
 });
 
 test("a kept conflict alongside a new skill still writes the new one", async () => {
   mkdirSync(join(cwd, ".claude/skills/auto-skill"), { recursive: true });
   writeFileSync(join(cwd, ".claude/skills/auto-skill/SKILL.md"), "mine");
-  expect(await runInit({ ...base, argv: ["init", "--yes", "--agents", "claude", "--keep-existing"] })).toBe(0);
+  expect(await runCommand({ ...base, argv: ["init", "--yes", "--agents", "claude", "--keep-existing"] })).toBe(0);
   expect(readFileSync(join(cwd, ".claude/skills/auto-skill/SKILL.md"), "utf8")).toBe("mine");
   expect(exists(cwd, ".claude/skills/manual-skill/SKILL.md")).toBe(true);
   expect(lines[0]).toBe("Kept .claude/skills/auto-skill (differs from ours; use --replace to overwrite)");
@@ -142,7 +142,7 @@ test("a kept global conflict is reported with ~", async () => {
   mkdirSync(join(home, ".claude/skills/auto-skill"), { recursive: true });
   writeFileSync(join(home, ".claude/skills/auto-skill/SKILL.md"), "mine");
   const argv = ["init", "--yes", "--agents", "claude", "--global", "--skills", "auto-skill"];
-  expect(await runInit({ ...base, argv })).toBe(0);
+  expect(await runCommand({ ...base, argv })).toBe(0);
   expect(lines[0]).toBe("Kept ~/.claude/skills/auto-skill (differs from ours; use --replace to overwrite)");
 });
 
@@ -155,7 +155,7 @@ test("unreadable unrelated skills in the target folder and in home do not affect
   lock(join(cwd, ".claude/skills/mine/secret"));
   lock(join(home, ".claude/skills/mine/secret"));
   lock(join(home, ".agents/skills/mine/secret"));
-  expect(await runInit({ ...base, argv: ["init", "--yes", "--agents", "claude,cursor"] })).toBe(0);
+  expect(await runCommand({ ...base, argv: ["init", "--yes", "--agents", "claude,cursor"] })).toBe(0);
   expect(exists(cwd, ".claude/skills/auto-skill/SKILL.md")).toBe(true);
   expect(errors).toEqual([]);
 });
@@ -165,7 +165,7 @@ test("an unreadable file inside a chosen skill in the target folder fails naming
   mkdirSync(join(cwd, ".claude/skills/auto-skill"), { recursive: true });
   writeFileSync(secret, "s");
   chmodSync(secret, 0o000);
-  await expect(runInit({ ...base, argv: ["init", "--yes", "--agents", "claude"] })).rejects.toThrow(secret);
+  await expect(runCommand({ ...base, argv: ["init", "--yes", "--agents", "claude"] })).rejects.toThrow(secret);
   expect(exists(cwd, ".claude/skills/manual-skill")).toBe(false);
 });
 
@@ -175,7 +175,7 @@ test("a plain file at a skill name is a conflict: kept by default, replaced with
   writeFileSync(path, "a file");
   const argv = ["init", "--yes", "--agents", "claude", "--skills", "manual-skill"];
 
-  expect(await runInit({ ...base, argv })).toBe(0);
+  expect(await runCommand({ ...base, argv })).toBe(0);
   expect(readFileSync(path, "utf8")).toBe("a file");
   expect(lines).toEqual([
     "Kept .claude/skills/manual-skill (differs from ours; use --replace to overwrite)",
@@ -184,17 +184,17 @@ test("a plain file at a skill name is a conflict: kept by default, replaced with
     "Claude Code: /manual-skill",
   ]);
 
-  expect(await runInit({ ...base, argv: [...argv, "--replace"] })).toBe(0);
+  expect(await runCommand({ ...base, argv: [...argv, "--replace"] })).toBe(0);
   expect(tree(join(cwd, ".claude/skills"))).toEqual(["manual-skill/SKILL.md", "manual-skill/references/notes.md"]);
 });
 
 test("second run prints '✓ Up to date. Nothing to write.' and writes nothing", async () => {
   const argv = ["init", "--yes", "--agents", "claude"];
-  expect(await runInit({ ...base, argv })).toBe(0);
+  expect(await runCommand({ ...base, argv })).toBe(0);
   const skillMd = join(cwd, ".claude/skills/auto-skill/SKILL.md");
   const before = statSync(skillMd).mtimeMs;
   lines = [];
-  expect(await runInit({ ...base, argv })).toBe(0);
+  expect(await runCommand({ ...base, argv })).toBe(0);
   expect(lines).toEqual(["✓ Up to date. Nothing to write."]);
   expect(statSync(skillMd).mtimeMs).toBe(before);
 });
@@ -202,44 +202,44 @@ test("second run prints '✓ Up to date. Nothing to write.' and writes nothing",
 test("warns when a chosen skill differs in another folder a ticked agent reads", async () => {
   mkdirSync(join(cwd, ".agents/skills/auto-skill"), { recursive: true });
   writeFileSync(join(cwd, ".agents/skills/auto-skill/SKILL.md"), "other");
-  expect(await runInit({ ...base, argv: ["init", "--yes", "--agents", "claude,cursor"] })).toBe(0);
+  expect(await runCommand({ ...base, argv: ["init", "--yes", "--agents", "claude,cursor"] })).toBe(0);
   expect(lines).toContain("▲ .agents/skills/auto-skill differs from magnitude's. Cursor will load both.");
   expect(readFileSync(join(cwd, ".agents/skills/auto-skill/SKILL.md"), "utf8")).toBe("other");
 });
 
 test("an identical copy in another folder a ticked agent reads gives no warning", async () => {
   cpSync(join(skillsDir, "auto-skill"), join(cwd, ".agents/skills/auto-skill"), { recursive: true });
-  expect(await runInit({ ...base, argv: ["init", "--yes", "--agents", "claude,cursor"] })).toBe(0);
+  expect(await runCommand({ ...base, argv: ["init", "--yes", "--agents", "claude,cursor"] })).toBe(0);
   expect(lines.filter((line) => line.includes(".agents/skills/auto-skill"))).toEqual([]);
 });
 
 test("non-interactive without --yes returns 1 and writes nothing", async () => {
   mkdirSync(join(cwd, ".claude"));
-  expect(await runInit({ ...base, argv: ["init"] })).toBe(1);
+  expect(await runCommand({ ...base, argv: ["init"] })).toBe(1);
   expect(lines).toEqual([]);
   expect(errors).toEqual(["Not a terminal. Re-run with --yes (and --agents) to install without questions."]);
   expect(exists(cwd, ".claude/skills")).toBe(false);
 });
 
 test("no agents detected and no --agents returns 2", async () => {
-  expect(await runInit({ ...base, argv: ["init", "--yes"] })).toBe(2);
+  expect(await runCommand({ ...base, argv: ["init", "--yes"] })).toBe(2);
   expect(errors).toEqual(["No agents detected. Pass --agents claude,cursor,codex (any of them)."]);
   expect(tree(cwd)).toEqual([]);
 });
 
 test("an unknown skill name returns 2 with the valid names", async () => {
-  expect(await runInit({ ...base, argv: ["init", "--yes", "--agents", "claude", "--skills", "nope"] })).toBe(2);
+  expect(await runCommand({ ...base, argv: ["init", "--yes", "--agents", "claude", "--skills", "nope"] })).toBe(2);
   expect(errors).toEqual(["Unknown skill: nope. Valid skills: auto-skill, manual-skill"]);
 });
 
 test("--help prints usage and returns 0 even without a terminal", async () => {
-  expect(await runInit({ ...base, argv: ["--help"] })).toBe(0);
+  expect(await runCommand({ ...base, argv: ["--help"] })).toBe(0);
   expect(lines.join("\n")).toContain("magnitude init [--agents claude,cursor,codex]");
   expect(lines.join("\n")).toContain("magnitude update");
 });
 
 test("project scope writes AGENTS.md and does not create CLAUDE.md", async () => {
-  expect(await runInit({ ...base, argv: ["init", "--yes", "--agents", "claude,cursor"] })).toBe(0);
+  expect(await runCommand({ ...base, argv: ["init", "--yes", "--agents", "claude,cursor"] })).toBe(0);
   expect(readFileSync(join(cwd, "AGENTS.md"), "utf8")).toContain("# Coding Principles");
   expect(exists(cwd, "CLAUDE.md")).toBe(false);
   expect(exists(cwd, ".claude/CLAUDE.md")).toBe(false);
@@ -247,7 +247,7 @@ test("project scope writes AGENTS.md and does not create CLAUDE.md", async () =>
 
 test("an existing CLAUDE.md keeps its text and gains the block, and so does AGENTS.md", async () => {
   writeFileSync(join(cwd, "CLAUDE.md"), "# Mine\n");
-  expect(await runInit({ ...base, argv: ["init", "--yes", "--agents", "claude"] })).toBe(0);
+  expect(await runCommand({ ...base, argv: ["init", "--yes", "--agents", "claude"] })).toBe(0);
   const claude = readFileSync(join(cwd, "CLAUDE.md"), "utf8");
   expect(claude.startsWith("# Mine\n\n")).toBe(true);
   expect(claude).toContain("<!-- magnitude:coding-principles -->");
@@ -255,9 +255,9 @@ test("an existing CLAUDE.md keeps its text and gains the block, and so does AGEN
 });
 
 test("an identical principles block is not rewritten", async () => {
-  const text = upsertPrinciples(undefined, loadPrinciplesBody()).text;
+  const text = upsertPrinciples(undefined, loadPrinciplesBody(resolve("instructions"))).text;
   writeFileSync(join(cwd, "AGENTS.md"), text);
-  expect(await runInit({ ...base, argv: ["init", "--yes", "--agents", "cursor"] })).toBe(0);
+  expect(await runCommand({ ...base, argv: ["init", "--yes", "--agents", "cursor"] })).toBe(0);
   expect(readFileSync(join(cwd, "AGENTS.md"), "utf8")).toBe(text);
 });
 
@@ -265,12 +265,12 @@ test("a different principles block is kept with --yes and replaced without touch
   const old = upsertPrinciples("# Stay\n", "old\n").text;
   const path = join(cwd, "AGENTS.md");
   writeFileSync(path, old);
-  expect(await runInit({ ...base, argv: ["init", "--yes", "--agents", "cursor"] })).toBe(0);
+  expect(await runCommand({ ...base, argv: ["init", "--yes", "--agents", "cursor"] })).toBe(0);
   expect(readFileSync(path, "utf8")).toBe(old);
   expect(lines).toContain("Kept AGENTS.md (coding principles differ; use --replace to overwrite)");
 
   lines = [];
-  expect(await runInit({ ...base, argv: ["init", "--yes", "--agents", "cursor", "--replace"] })).toBe(0);
+  expect(await runCommand({ ...base, argv: ["init", "--yes", "--agents", "cursor", "--replace"] })).toBe(0);
   const next = readFileSync(path, "utf8");
   expect(next.startsWith("# Stay\n\n")).toBe(true);
   expect(next).toContain("# Coding Principles");
@@ -278,16 +278,16 @@ test("a different principles block is kept with --yes and replaced without touch
 });
 
 test("global Claude and Codex write their home files", async () => {
-  expect(await runInit({ ...base, argv: ["init", "--yes", "--agents", "claude", "--global", "--skills", "auto-skill"] })).toBe(0);
+  expect(await runCommand({ ...base, argv: ["init", "--yes", "--agents", "claude", "--global", "--skills", "auto-skill"] })).toBe(0);
   expect(readFileSync(join(home, ".claude", "CLAUDE.md"), "utf8")).toContain("# Coding Principles");
   expect(exists(cwd, "AGENTS.md")).toBe(false);
 
-  expect(await runInit({ ...base, argv: ["init", "--yes", "--agents", "codex", "--global", "--skills", "auto-skill"] })).toBe(0);
+  expect(await runCommand({ ...base, argv: ["init", "--yes", "--agents", "codex", "--global", "--skills", "auto-skill"] })).toBe(0);
   expect(readFileSync(join(home, ".codex", "AGENTS.md"), "utf8")).toContain("# Coding Principles");
 });
 
 test("global Cursor writes no principles file, still installs the skill, and points at the bundled principles", async () => {
-  expect(await runInit({ ...base, argv: ["init", "--yes", "--agents", "cursor", "--global", "--skills", "auto-skill"] })).toBe(0);
+  expect(await runCommand({ ...base, argv: ["init", "--yes", "--agents", "cursor", "--global", "--skills", "auto-skill"] })).toBe(0);
   expect(exists(home, ".agents/skills/auto-skill/SKILL.md")).toBe(true);
   expect(exists(home, "AGENTS.md")).toBe(false);
   expect(exists(home, ".claude/CLAUDE.md")).toBe(false);
@@ -302,10 +302,10 @@ test("global Cursor writes no principles file, still installs the skill, and poi
 
 test("global Claude and Cursor point the note at ~/.claude/CLAUDE.md and a second run prints only the up-to-date line", async () => {
   const argv = ["init", "--yes", "--agents", "claude,cursor", "--global"];
-  expect(await runInit({ ...base, argv })).toBe(0);
+  expect(await runCommand({ ...base, argv })).toBe(0);
   expect(lines).toContain("  Paste them from ~/.claude/CLAUDE.md into Cursor Settings › Rules › User Rules.");
   lines = [];
-  expect(await runInit({ ...base, argv })).toBe(0);
+  expect(await runCommand({ ...base, argv })).toBe(0);
   expect(lines).toEqual(["✓ Up to date. Nothing to write."]);
 });
 
@@ -314,7 +314,7 @@ test("an identical old coding-principles skill is removed and an edited one is k
   const folder = join(cwd, ".claude/skills/coding-principles");
   mkdirSync(folder, { recursive: true });
   writeFileSync(join(folder, "SKILL.md"), legacy);
-  expect(await runInit({ ...base, argv: ["init", "--yes", "--agents", "claude", "--skills", "auto-skill"] })).toBe(0);
+  expect(await runCommand({ ...base, argv: ["init", "--yes", "--agents", "claude", "--skills", "auto-skill"] })).toBe(0);
   expect(existsSync(folder)).toBe(false);
   expect(lines).toContain("remove .claude/skills/coding-principles");
 
@@ -322,13 +322,13 @@ test("an identical old coding-principles skill is removed and an edited one is k
   mkdirSync(edited, { recursive: true });
   writeFileSync(join(edited, "SKILL.md"), "edited\n");
   lines = [];
-  expect(await runInit({ ...base, argv: ["init", "--yes", "--agents", "codex", "--skills", "auto-skill"] })).toBe(0);
+  expect(await runCommand({ ...base, argv: ["init", "--yes", "--agents", "codex", "--skills", "auto-skill"] })).toBe(0);
   expect(readFileSync(join(edited, "SKILL.md"), "utf8")).toBe("edited\n");
   expect(lines).toContain("Kept .agents/skills/coding-principles (old coding-principles skill was edited; remove it yourself)");
 });
 
 test("--version prints the package.json version and returns 0", async () => {
   const { version } = JSON.parse(readFileSync(resolve("package.json"), "utf8")) as { version: string };
-  expect(await runInit({ ...base, argv: ["--version"] })).toBe(0);
+  expect(await runCommand({ ...base, argv: ["--version"] })).toBe(0);
   expect(lines).toEqual([version]);
 });

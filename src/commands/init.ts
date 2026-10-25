@@ -1,59 +1,26 @@
 import { readFileSync, statSync } from "node:fs";
-import { dirname, join, resolve, sep } from "node:path";
-import { fileURLToPath } from "node:url";
-import { AGENT_NAMES, displayPath, finishedLines, nextStepLines, reviewEntries, reviewLines } from "./copy.js";
-import { detectAgents, findProjectRoot, scanCopies, scanSkills, type Detection } from "./detect.js";
-import { applyFileWrites, applyRemovals, applyWrites, isMissing, readFilesRecursive } from "./disk.js";
-import { parseFlags, resolveNonInteractive, UsageError, type Flags } from "./flags.js";
-import { recordInstalls } from "./ledger.js";
-import { buildPlan, folderPath, foldersReadBy, resolveInstructions, resolveWrites, targetFolders, type PrinciplesContext } from "./plan.js";
-import { firstClaudeInstruction, loadLegacySkill, loadPrinciplesBody, principleDestinations, principlesFile } from "./principles.js";
-import { askAnswers, askConfirm, askDecisions, type Conflict } from "./prompts.js";
-import { loadSkills } from "./skills.js";
-import { foreground } from "./theme.js";
-import type { AgentId, Answers, Decision, DuplicateWarning, FileMap, Plan, Roots, Scan, Skill, SkillWrite } from "./types.js";
-import {
-  APPLY_ENV,
-  applyRecordedSkills,
-  currentPackagePath,
-  defaultHasPackageJson,
-  fetchLatestVersion,
-  installPackage,
-  reexecApply,
-  runUpdate,
-  type UpdateHooks,
-} from "./update.js";
+import { join, sep } from "node:path";
+import { AGENT_NAMES, displayPath, finishedLines, nextStepLines, reviewEntries, reviewLines } from "../ui/messages.js";
+import { detectAgents, findProjectRoot, scanCopies, scanSkills, type Detection } from "../install/detect.js";
+import { applyFileWrites, applyRemovals, applyWrites, isMissing, readFilesRecursive } from "../install/disk.js";
+import { resolveNonInteractive, type Flags } from "./flags.js";
+import { recordInstalls } from "../install/ledger.js";
+import { buildPlan, folderPath, foldersReadBy, resolveInstructions, resolveWrites, targetFolders, type PrinciplesContext } from "../install/plan.js";
+import { firstClaudeInstruction, loadLegacySkill, loadPrinciplesBody, principleDestinations, principlesFile } from "../install/principles.js";
+import { askAnswers, askConfirm, askDecisions, type Conflict } from "../ui/prompts.js";
+import { foreground } from "../ui/theme.js";
+import type { AgentId, Answers, Decision, DuplicateWarning, FileMap, Plan, Roots, Scan, Skill, SkillWrite } from "../install/types.js";
 
 export interface InitOptions {
-  argv: string[];
   cwd: string;
   home: string;
-  skillsDir: string;
   interactive: boolean;
+  /** Holds the bundled instructions folder; cli.ts resolves it so no other module depends on its own location. */
+  packageRoot: string;
   log: (line: string) => void;
   /** Usage errors, refusals and cancellation; cli.ts sends these to stderr. */
   error: (line: string) => void;
-  /** Injected by tests so update never talks to the network or a package manager. */
-  update?: UpdateHooks;
 }
-
-const USAGE = [
-  "Usage:",
-  "  magnitude init [--agents claude,cursor,codex] [--skills all|name,name]",
-  "                 [--global] [--replace | --keep-existing] [--yes]",
-  "  magnitude update",
-  "  magnitude --help | --version",
-  "",
-  "Options:",
-  "  --agents <list>    Agents to install for: claude, cursor, codex (default: detected)",
-  "  --skills <list>    Skills to install, or all (default: all)",
-  "  --global           Install under your home folder instead of the project",
-  "  --replace          Replace existing skills that differ from ours",
-  "  --keep-existing    Keep existing skills that differ from ours (default with --yes)",
-  "  -y, --yes          Skip every prompt",
-  "  -h, --help         Show this help",
-  "  -v, --version      Show the version",
-];
 
 const NOT_A_TERMINAL = "Not a terminal. Re-run with --yes (and --agents) to install without questions.";
 
@@ -65,14 +32,10 @@ const unlessCancelled = <T>(value: T | null): T => {
   return value;
 };
 
-export async function runInit(opts: InitOptions): Promise<number> {
+export async function runInit(opts: InitOptions, flags: Flags, skills: Skill[]): Promise<number> {
   try {
-    return await run(opts);
+    return await run(opts, flags, skills);
   } catch (error) {
-    if (error instanceof UsageError) {
-      opts.error(error.message);
-      return 2;
-    }
     if (error instanceof Cancelled) {
       opts.error("Cancelled. Nothing was written.");
       return 1;
@@ -81,12 +44,7 @@ export async function runInit(opts: InitOptions): Promise<number> {
   }
 }
 
-async function run(opts: InitOptions): Promise<number> {
-  const skills = loadSkills(opts.skillsDir);
-  const flags = parseFlags(opts.argv, skills.map((skill) => skill.name));
-  if (flags.command === "help") return printAll(opts.log, USAGE);
-  if (flags.command === "version") return printAll(opts.log, [readVersion()]);
-  if (flags.command === "update") return runUpdateCommand(opts);
+async function run(opts: InitOptions, flags: Flags, skills: Skill[]): Promise<number> {
   if (!opts.interactive && !flags.yes) {
     opts.error(NOT_A_TERMINAL);
     return 1;
@@ -101,7 +59,7 @@ async function run(opts: InitOptions): Promise<number> {
   const detected = detectAgents(roots.project);
   let answers = await chooseAnswers(flags, detected, skills);
   for (;;) {
-    const plan = buildPlan(answers, skills, roots, scanFor(answers, roots), principlesFor(answers, roots));
+    const plan = buildPlan(answers, skills, roots, scanFor(answers, roots), principlesFor(answers, roots, join(opts.packageRoot, "instructions")));
     for (const warning of plan.warnings) logOnce(warningLine(warning, roots));
     const outcome = await install({ log: opts.log, logOnce, flags, roots }, answers, plan);
     if (outcome !== "back") return outcome;
@@ -180,30 +138,9 @@ async function install({ log, logOnce, flags, roots }: RunContext, answers: Answ
   }
 }
 
-async function runUpdateCommand(opts: InitOptions): Promise<number> {
-  if (process.env[APPLY_ENV] === "1") return applyRecordedSkills(opts.home, opts.skillsDir, opts.log);
-  const hooks = opts.update;
-  return runUpdate({
-    packagePath: hooks?.packagePath ?? currentPackagePath(),
-    currentVersion: hooks?.currentVersion ?? readVersion(),
-    latest: hooks?.latest ?? fetchLatestVersion,
-    install: hooks?.install ?? installPackage,
-    apply: hooks?.apply ?? reexecApply,
-    hasPackageJson: hooks?.hasPackageJson ?? defaultHasPackageJson,
-    log: opts.log,
-    error: opts.error,
-  });
-}
-
 function printAll(log: InitOptions["log"], lines: string[]): number {
   lines.forEach((line) => log(line));
   return 0;
-}
-
-/** dist/cli.js and src/init.ts both sit one level below the package root. */
-function readVersion(): string {
-  const path = resolve(dirname(fileURLToPath(import.meta.url)), "..", "package.json");
-  return (JSON.parse(readFileSync(path, "utf8")) as { version: string }).version;
 }
 
 async function chooseAnswers(flags: Flags, detected: Detection, skills: Skill[], previous?: Answers): Promise<Answers> {
@@ -261,7 +198,7 @@ function readLegacy(path: string): FileMap | undefined {
   }
 }
 
-function principlesFor(answers: Answers, roots: Roots): PrinciplesContext {
+function principlesFor(answers: Answers, roots: Roots, instructionsDir: string): PrinciplesContext {
   const claudeFile =
     answers.scope === "project" && answers.agents.includes("claude")
       ? firstClaudeInstruction(roots.project, isFile)
@@ -276,7 +213,7 @@ function principlesFor(answers: Answers, roots: Roots): PrinciplesContext {
     const found = readLegacy(dest);
     if (found) legacySkills[dest] = found;
   }
-  return { body: loadPrinciplesBody(), bodyFile: principlesFile(), claudeFile, files, legacy: loadLegacySkill(), legacySkills };
+  return { body: loadPrinciplesBody(instructionsDir), bodyFile: principlesFile(instructionsDir), claudeFile, files, legacy: loadLegacySkill(instructionsDir), legacySkills };
 }
 
 function warningLine(warning: DuplicateWarning, roots: Roots): string {

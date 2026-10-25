@@ -2,11 +2,11 @@ import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { isMissing } from "./disk.js";
-import { readLedger } from "./ledger.js";
-import { expectedFiles } from "./plan.js";
-import { loadSkills } from "./skills.js";
-import type { FileMap, FolderKey } from "./types.js";
+import { isMissing } from "../install/disk.js";
+import { readLedger } from "../install/ledger.js";
+import { expectedFiles } from "../install/plan.js";
+import { loadSkills } from "../install/skills.js";
+import type { FileMap, FolderKey } from "../install/types.js";
 
 export type Manager = "npm" | "pnpm" | "bun";
 
@@ -39,6 +39,15 @@ export interface UpdateIO {
   hasPackageJson: (dir: string) => boolean;
   log: (line: string) => void;
   error: (line: string) => void;
+}
+
+export interface UpdateCommandOptions {
+  home: string;
+  skillsDir: string;
+  log: (line: string) => void;
+  error: (line: string) => void;
+  /** Injected by tests so update never talks to the network or a package manager. */
+  update?: UpdateHooks;
 }
 
 /** The running file. A global install lives under that package manager's prefix. */
@@ -79,6 +88,21 @@ export async function fetchLatestVersion(): Promise<string> {
     throw new Error("Could not check the latest version.");
   }
   return body.version.trim();
+}
+
+export async function runUpdateCommand(opts: UpdateCommandOptions, currentVersion: string): Promise<number> {
+  if (process.env[APPLY_ENV] === "1") return applyRecordedSkills(opts.home, opts.skillsDir, opts.log);
+  const hooks = opts.update;
+  return runUpdate({
+    packagePath: hooks?.packagePath ?? currentPackagePath(),
+    currentVersion: hooks?.currentVersion ?? currentVersion,
+    latest: hooks?.latest ?? fetchLatestVersion,
+    install: hooks?.install ?? installPackage,
+    apply: hooks?.apply ?? reexecApply,
+    hasPackageJson: hooks?.hasPackageJson ?? defaultHasPackageJson,
+    log: opts.log,
+    error: opts.error,
+  });
 }
 
 export async function runUpdate(io: UpdateIO): Promise<number> {

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
-import { parseFlags, resolveNonInteractive, UsageError } from "../src/flags.js";
-import type { Flags } from "../src/flags.js";
+import { parseFlags, resolveNonInteractive, UsageError } from "../src/commands/flags.js";
+import type { Flags } from "../src/commands/flags.js";
 
 const skills = ["calibrate", "open-pr"];
 const parse = (...argv: string[]) => parseFlags(argv, skills);
