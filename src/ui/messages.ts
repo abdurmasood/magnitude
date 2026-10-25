@@ -1,7 +1,7 @@
 import { relative, sep } from "node:path";
 import { styleText } from "node:util";
 import { DOCS_URL, foreground, headerLine, STEPS, stepperLine } from "./theme.js";
-import type { AgentId, FinalWrite, Plan, Roots, SkillRemoval } from "./types.js";
+import type { AgentId, FinalWrite, Plan, Roots, SkillRemoval } from "../install/types.js";
 
 export const AGENT_NAMES: Record<AgentId, string> = { claude: "Claude Code", cursor: "Cursor", codex: "Codex" };
 

@@ -1,7 +1,7 @@
 import { styleText } from "node:util";
 import { wizard, type WizardPage } from "./picker.js";
-import type { AgentId, Answers, Decision, Scope, Skill } from "./types.js";
-import { plural, type ReviewEntry } from "./copy.js";
+import type { AgentId, Answers, Decision, Scope, Skill } from "../install/types.js";
+import { plural, type ReviewEntry } from "./messages.js";
 
 const AGENT_OPTIONS: { value: AgentId; label: string }[] = [
   { value: "claude", label: "Claude Code" },

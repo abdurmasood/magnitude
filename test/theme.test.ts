@@ -14,7 +14,7 @@ import {
   STEPS,
   stepperLine,
   submitLabel,
-} from "../src/theme.js";
+} from "../src/ui/theme.js";
 
 afterEach(() => setColorDepth(undefined));
 
