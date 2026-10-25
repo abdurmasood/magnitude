@@ -1,23 +1,17 @@
 import { readFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 import { readFilesRecursive } from "./disk.js";
 import type { AgentId, FileMap, Roots, Scope } from "./types.js";
 
-/** Bundled instructions folder. dist/cli.js and src/principles.ts both sit one level below the package root. */
-export function instructionsDir(): string {
-  return resolve(dirname(fileURLToPath(import.meta.url)), "..", "instructions");
-}
-
-export function principlesFile(dir = instructionsDir()): string {
+export function principlesFile(dir: string): string {
   return join(dir, "coding-principles.md");
 }
 
-export function loadPrinciplesBody(dir = instructionsDir()): string {
+export function loadPrinciplesBody(dir: string): string {
   return readFileSync(principlesFile(dir), "utf8");
 }
 
-export function loadLegacySkill(dir = instructionsDir()): FileMap {
+export function loadLegacySkill(dir: string): FileMap {
   return readFilesRecursive(join(dir, "legacy", "coding-principles"));
 }
 

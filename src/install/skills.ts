@@ -1,6 +1,5 @@
 import { readdirSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 import { parse } from "yaml";
 import { readFilesRecursive } from "./disk.js";
 import type { Skill } from "./types.js";
@@ -8,11 +7,6 @@ import type { Skill } from "./types.js";
 /** The name becomes a destination folder, so it must be a plain, safe path segment. */
 const SKILL_NAME = /^[a-z0-9-]+$/;
 const FRONTMATTER = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/;
-
-/** Resolves the bundled skills folder relative to the built dist/cli.js (or src/skills.ts). */
-export function bundledSkillsDir(): string {
-  return resolve(dirname(fileURLToPath(import.meta.url)), "..", "skills");
-}
 
 function parseSkill(folder: string, dir: string): Skill {
   const files = readFilesRecursive(dir);
