@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
-import { firstClaudeInstruction, legacySkillMatches, principleDestinations, upsertPrinciples } from "../src/principles.js";
-import type { Roots } from "../src/types.js";
+import { firstClaudeInstruction, legacySkillMatches, principleDestinations, upsertPrinciples } from "../src/install/principles.js";
+import type { Roots } from "../src/install/types.js";
 
 const roots: Roots = { project: "/p", home: "/h" };
 

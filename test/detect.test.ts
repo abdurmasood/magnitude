@@ -2,7 +2,7 @@ import { chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync }
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import { detectAgents, findProjectRoot, scanCopies, scanSkills } from "../src/detect.js";
+import { detectAgents, findProjectRoot, scanCopies, scanSkills } from "../src/install/detect.js";
 
 let tmp: string;
 beforeEach(() => {

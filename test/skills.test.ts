@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
-import { loadSkills } from "../src/skills.js";
+import { loadSkills } from "../src/install/skills.js";
 
 describe("loadSkills", () => {
   test("loads every skill folder with frontmatter and all files", () => {
