@@ -45,6 +45,7 @@ npx @magnitudeai/cli init
 | `open-pr`       | Opens a pull request with a conventional title and a short What / Why body                                           | When you call it |
 | `merge-prs`     | Merges pull requests into main, including stacked sets, or closes them                                               | When you call it |
 | `compress`      | Rewrites answers so the verdict comes first, with numbered follow-ups for the rest, and keeps that shape all session | When you call it |
+| `recap`         | Rebuilds the thought process of the conversation when the thread has drifted                                         | When you call it |
 
 
 Call a skill with `/name` in Claude Code and Cursor, or `$name` in Codex.
